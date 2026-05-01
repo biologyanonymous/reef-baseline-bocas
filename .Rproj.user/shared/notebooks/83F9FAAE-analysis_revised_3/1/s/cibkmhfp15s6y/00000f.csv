@@ -1,0 +1,86 @@
+"0","#| label: kw-algae"
+"0",""
+"0","kw_algae <- substrate_clean |> kruskal_test(algae_pct ~ dive_site)"
+"0","print(kw_algae)"
+"1","[38;5;246m# A tibble: 1 × 6[39m
+"
+"1","  .y.           n statistic    df          p method        
+"
+"1","[38;5;250m*[39m [3m[38;5;246m<chr>[39m[23m     [3m[38;5;246m<int>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m      [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<chr>[39m[23m         
+"
+"1","[38;5;250m1[39m algae_pct   275      32.9     4 0.000[4m0[24m[4m0[24m[4m1[24m24 Kruskal-Wallis
+"
+"0","dunn_algae <- substrate_clean |>"
+"0","  dunn_test(algae_pct ~ dive_site, p.adjust.method = ""BH"") |>"
+"0","  add_significance()"
+"0","print(dunn_algae)"
+"1","[38;5;246m# A tibble: 10 × 9[39m
+"
+"1","   .y.       group1          group2             n1    n2 statistic           p      p.adj p.adj.signif
+"
+"1","   [3m[38;5;246m<chr>[39m[23m     [3m[38;5;246m<chr>[39m[23m           [3m[38;5;246m<chr>[39m[23m           [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<int>[39m[23m     [3m[38;5;246m<dbl>[39m[23m       [3m[38;5;246m<dbl>[39m[23m      [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<chr>[39m[23m       
+"
+"1","[38;5;250m 1[39m algae_pct Casablanca      Buoy Line          93    45    -[31m2[39m[31m.[39m[31m93[39m  0.003[4m4[24m[4m0[24m     0.006[4m7[24m[4m9[24m    **          
+"
+"1","[38;5;250m 2[39m algae_pct Casablanca      Manuels Wall       93    35    -[31m2[39m[31m.[39m[31m0[39m[31m5[39m  0.040[4m7[24m      0.050[4m8[24m     ns          
+"
+"1","[38;5;250m 3[39m algae_pct Casablanca      Grandmas Garden    93    55     0.449 0.653       0.653      ns          
+"
+"1","[38;5;250m 4[39m algae_pct Casablanca      Pandora            93    47     3.09  0.002[4m0[24m[4m3[24m     0.006[4m1[24m[4m8[24m    **          
+"
+"1","[38;5;250m 5[39m algae_pct Buoy Line       Manuels Wall       45    35     0.559 0.576       0.640      ns          
+"
+"1","[38;5;250m 6[39m algae_pct Buoy Line       Grandmas Garden    45    55     3.03  0.002[4m4[24m[4m7[24m     0.006[4m1[24m[4m8[24m    **          
+"
+"1","[38;5;250m 7[39m algae_pct Buoy Line       Pandora            45    47     5.20  0.000[4m0[24m[4m0[24m[4m0[24m200 0.000[4m0[24m[4m0[24m[4m2[24m00 ****        
+"
+"1","[38;5;250m 8[39m algae_pct Manuels Wall    Grandmas Garden    35    55     2.23  0.025[4m7[24m      0.036[4m7[24m     *           
+"
+"1","[38;5;250m 9[39m algae_pct Manuels Wall    Pandora            35    47     4.29  0.000[4m0[24m[4m1[24m[4m7[24m7   0.000[4m0[24m[4m8[24m[4m8[24m6  ****        
+"
+"1","[38;5;250m10[39m algae_pct Grandmas Garden Pandora            55    47     2.40  0.016[4m6[24m      0.027[4m6[24m     *           
+"
+"0","pv_algae <- setNames(dunn_algae$p.adj,"
+"0","                     paste(dunn_algae$group1, dunn_algae$group2, sep = ""-""))"
+"0","letters_algae <- multcompLetters(pv_algae)$Letters"
+"0","letters_algae_df <- data.frame("
+"0","  dive_site = factor(names(letters_algae), levels = site_levels),"
+"0","  letter    = letters_algae,"
+"0","  y_pos     = max(substrate_clean$algae_pct, na.rm = TRUE) * 1.08"
+"0",")"
+"0","cat(""\nCompact letter display (algae cover):\n"")"
+"1","
+Compact letter display (algae cover):
+"
+"0","print(letters_algae_df)"
+"1","               "
+"1","       dive_site"
+"1"," letter"
+"1"," y_pos"
+"1","
+Casablanca     "
+"1","      Casablanca"
+"1","     ab"
+"1","  46.8"
+"1","
+Buoy Line      "
+"1","       Buoy Line"
+"1","      c"
+"1","  46.8"
+"1","
+Manuels Wall   "
+"1","    Manuels Wall"
+"1","     ac"
+"1","  46.8"
+"1","
+Grandmas Garden"
+"1"," Grandmas Garden"
+"1","      b"
+"1","  46.8"
+"1","
+Pandora        "
+"1","         Pandora"
+"1","      d"
+"1","  46.8"
+"1","
+"

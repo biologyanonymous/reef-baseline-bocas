@@ -1,0 +1,6 @@
+"0","# Add coastline layer for finer detail at small scale
+coastline <- ne_coastline(scale = ""large"", returnclass = ""sf"")
+"
+"2","Error in loadNamespace(x) : 
+  there is no package called ‘rnaturalearthhires’
+"

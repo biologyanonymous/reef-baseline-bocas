@@ -1,0 +1,8 @@
+"0","cat(""Years in substrate data:"", paste(sort(unique(substrate_clean$year)), collapse = "", ""), ""\n"")
+"
+"1","Years in substrate data:"
+"1"," "
+"1","2023, 2024, 2025"
+"1"," "
+"1","
+"

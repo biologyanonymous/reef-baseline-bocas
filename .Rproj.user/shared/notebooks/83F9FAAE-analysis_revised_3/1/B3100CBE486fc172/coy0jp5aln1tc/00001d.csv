@@ -1,0 +1,5 @@
+"0","ggsave(""figures/fig5_morphotype_map_scalebar.png"", p_map,
+       width = 11, height = 8, dpi = 300)
+"
+"2","Error: object 'p_map' not found
+"

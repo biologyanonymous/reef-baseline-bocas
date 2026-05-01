@@ -1,0 +1,159 @@
+"0","#| label: coral-health-stats"
+"0",""
+"0","# Aggregate health categories per transect (sum across all coral types per dive)"
+"0","health_by_transect <- coral_health_long |>"
+"0","  group_by(transect_id, dive_site, date, year, month_year) |>"
+"0","  summarise("
+"0","    he   = sum(he,   na.rm = TRUE),"
+"0","    dg_m = sum(dg_m, na.rm = TRUE),"
+"0","    dg_h = sum(dg_h, na.rm = TRUE),"
+"0","    de   = sum(de,   na.rm = TRUE),"
+"0","    pa   = sum(pa,   na.rm = TRUE),"
+"0","    pb   = sum(pb,   na.rm = TRUE),"
+"0","    fb   = sum(fb,   na.rm = TRUE),"
+"0","    .groups = ""drop"""
+"0","  ) |>"
+"0","  filter(!is.na(dive_site))"
+"0",""
+"0","cat(""=== Coral health transects per site ===\n"")"
+"1","=== Coral health transects per site ===
+"
+"0","print(table(health_by_transect$dive_site))"
+"1","
+"
+"1","     Casablanca "
+"1","      Buoy Line "
+"1","   Manuels Wall "
+"1","Grandmas Garden "
+"1","        Pandora "
+"1","
+"
+"1","             64 "
+"1","             36 "
+"1","             26 "
+"1","             45 "
+"1","             39 "
+"1","
+"
+"0","# Kruskal–Wallis for each health category (R2.39)"
+"0","health_cats <- c(""he"", ""dg_m"", ""dg_h"", ""de"", ""pa"", ""pb"", ""fb"")"
+"0","health_labels <- c(""Healthy"", ""Mild degradation"", ""Heavy degradation"","
+"0","                   ""Dead"", ""Paling"", ""Partial bleaching"", ""Full bleaching"")"
+"0",""
+"0","kw_health_results <- purrr::map2_dfr(health_cats, health_labels, function(col, lbl) {"
+"0","  d <- health_by_transect |> filter(!is.na(dive_site), !is.na(.data[[col]]))"
+"0","  if (n_distinct(d$dive_site) < 2 || all(d[[col]] == 0)) {"
+"0","    return(tibble(category = lbl, statistic = NA, df = NA, p = NA, note = ""all zero or <2 sites""))"
+"0","  }"
+"0","  res <- kruskal_test(d, as.formula(paste(col, ""~ dive_site"")))"
+"0","  tibble(category = lbl, statistic = res$statistic, df = res$df, p = res$p, note = """")"
+"0","})"
+"0",""
+"0","cat(""\n=== Kruskal–Wallis: coral health indicators ~ site (R2.39) ===\n"")"
+"1","
+=== Kruskal–Wallis: coral health indicators ~ site (R2.39) ===
+"
+"0","print(kw_health_results)"
+"1","[38;5;246m# A tibble: 7 × 5[39m
+"
+"1","  category          statistic    df         p note 
+"
+"1","  [3m[38;5;246m<chr>[39m[23m                 [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<chr>[39m[23m
+"
+"1","[38;5;250m1[39m Healthy               24.7      4 0.000[4m0[24m[4m5[24m[4m8[24m6 [38;5;246m""[39m[38;5;246m""[39m   
+"
+"1","[38;5;250m2[39m Mild degradation      12.8      4 0.012[4m2[24m    [38;5;246m""[39m[38;5;246m""[39m   
+"
+"1","[38;5;250m3[39m Heavy degradation      4.42     4 0.352     [38;5;246m""[39m[38;5;246m""[39m   
+"
+"1","[38;5;250m4[39m Dead                   3.92     4 0.418     [38;5;246m""[39m[38;5;246m""[39m   
+"
+"1","[38;5;250m5[39m Paling                 9.49     4 0.05      [38;5;246m""[39m[38;5;246m""[39m   
+"
+"1","[38;5;250m6[39m Partial bleaching      1.89     4 0.756     [38;5;246m""[39m[38;5;246m""[39m   
+"
+"1","[38;5;250m7[39m Full bleaching         7.59     4 0.108     [38;5;246m""[39m[38;5;246m""[39m   
+"
+"0","# Post-hoc for significant categories"
+"0","sig_cats <- kw_health_results |> filter(!is.na(p), p < 0.05) |> pull(category)"
+"0","if (length(sig_cats) > 0) {"
+"0","  cat(""\nPost-hoc Dunn tests for significant categories:\n"")"
+"0","  purrr::walk(sig_cats, function(lbl) {"
+"0","    col <- health_cats[health_labels == lbl]"
+"0","    cat(""\n--"", lbl, ""--\n"")"
+"0","    d   <- health_by_transect |> filter(!is.na(dive_site))"
+"0","    res <- dunn_test(d, as.formula(paste(col, ""~ dive_site"")), p.adjust.method = ""BH"")"
+"0","    print(res)"
+"0","  })"
+"0","} else {"
+"0","  cat(""\nNo health categories showed significant site differences at p < 0.05.\n"")"
+"0","}"
+"1","
+Post-hoc Dunn tests for significant categories:
+"
+"1","
+--"
+"1"," "
+"1","Healthy"
+"1"," "
+"1","--
+"
+"1","[38;5;246m# A tibble: 10 × 9[39m
+"
+"1","   .y.   group1          group2             n1    n2 statistic          p     p.adj p.adj.signif
+"
+"1"," [38;5;250m*[39m [3m[38;5;246m<chr>[39m[23m [3m[38;5;246m<chr>[39m[23m           [3m[38;5;246m<chr>[39m[23m           [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<int>[39m[23m     [3m[38;5;246m<dbl>[39m[23m      [3m[38;5;246m<dbl>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<chr>[39m[23m       
+"
+"1","[38;5;250m 1[39m he    Casablanca      Buoy Line          64    36    -[31m2[39m[31m.[39m[31m66[39m  0.007[4m7[24m[4m6[24m    0.016[4m7[24m    *           
+"
+"1","[38;5;250m 2[39m he    Casablanca      Manuels Wall       64    26    -[31m0[39m[31m.[39m[31m687[39m 0.492      0.547     ns          
+"
+"1","[38;5;250m 3[39m he    Casablanca      Grandmas Garden    64    45     2.64  0.008[4m3[24m[4m6[24m    0.016[4m7[24m    *           
+"
+"1","[38;5;250m 4[39m he    Casablanca      Pandora            64    39    -[31m0[39m[31m.[39m[31m943[39m 0.346      0.432     ns          
+"
+"1","[38;5;250m 5[39m he    Buoy Line       Manuels Wall       36    26     1.53  0.125      0.178     ns          
+"
+"1","[38;5;250m 6[39m he    Buoy Line       Grandmas Garden    36    45     4.77  0.000[4m0[24m[4m0[24m[4m1[24m80 0.000[4m0[24m[4m1[24m[4m8[24m0 ****        
+"
+"1","[38;5;250m 7[39m he    Buoy Line       Pandora            36    39     1.57  0.116      0.178     ns          
+"
+"1","[38;5;250m 8[39m he    Manuels Wall    Grandmas Garden    26    45     2.73  0.006[4m3[24m[4m1[24m    0.016[4m7[24m    *           
+"
+"1","[38;5;250m 9[39m he    Manuels Wall    Pandora            26    39    -[31m0[39m[31m.[39m[31m126[39m 0.900      0.900     ns          
+"
+"1","[38;5;250m10[39m he    Grandmas Garden Pandora            45    39    -[31m3[39m[31m.[39m[31m22[39m  0.001[4m2[24m[4m8[24m    0.006[4m3[24m[4m9[24m   **          
+"
+"1","
+--"
+"1"," "
+"1","Mild degradation"
+"1"," "
+"1","--
+"
+"1","[38;5;246m# A tibble: 10 × 9[39m
+"
+"1","   .y.   group1          group2             n1    n2 statistic       p  p.adj p.adj.signif
+"
+"1"," [38;5;250m*[39m [3m[38;5;246m<chr>[39m[23m [3m[38;5;246m<chr>[39m[23m           [3m[38;5;246m<chr>[39m[23m           [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<int>[39m[23m     [3m[38;5;246m<dbl>[39m[23m   [3m[38;5;246m<dbl>[39m[23m  [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<chr>[39m[23m       
+"
+"1","[38;5;250m 1[39m dg_m  Casablanca      Buoy Line          64    36   -[31m1[39m[31m.[39m[31m43[39m   0.153   0.303  ns          
+"
+"1","[38;5;250m 2[39m dg_m  Casablanca      Manuels Wall       64    26   -[31m1[39m[31m.[39m[31m0[39m[31m7[39m   0.284   0.380  ns          
+"
+"1","[38;5;250m 3[39m dg_m  Casablanca      Grandmas Garden    64    45    2.17   0.029[4m9[24m  0.099[4m7[24m ns          
+"
+"1","[38;5;250m 4[39m dg_m  Casablanca      Pandora            64    39    0.054[4m7[24m 0.956   0.956  ns          
+"
+"1","[38;5;250m 5[39m dg_m  Buoy Line       Manuels Wall       36    26    0.188  0.851   0.946  ns          
+"
+"1","[38;5;250m 6[39m dg_m  Buoy Line       Grandmas Garden    36    45    3.22   0.001[4m2[24m[4m8[24m 0.012[4m8[24m *           
+"
+"1","[38;5;250m 7[39m dg_m  Buoy Line       Pandora            36    39    1.34   0.182   0.303  ns          
+"
+"1","[38;5;250m 8[39m dg_m  Manuels Wall    Grandmas Garden    26    45    2.73   0.006[4m4[24m[4m0[24m 0.032[4m0[24m *           
+"
+"1","[38;5;250m 9[39m dg_m  Manuels Wall    Pandora            26    39    1.03   0.304   0.380  ns          
+"
+"1","[38;5;250m10[39m dg_m  Grandmas Garden Pandora            45    39   -[31m1[39m[31m.[39m[31m88[39m   0.060[4m1[24m  0.150  ns          
+"

@@ -1,0 +1,98 @@
+"0","#| label: rugosity-stats"
+"0",""
+"0","cat(""=== Rugosity (maximum relief) summary ===\n"")"
+"1","=== Rugosity (maximum relief) summary ===
+"
+"0","rug_summary <- fish_clean |>"
+"0","  filter(!is.na(mean_rugosity)) |>"
+"0","  group_by(dive_site) |>"
+"0","  summarise("
+"0","    n          = n(),"
+"0","    mean_rug   = round(mean(mean_rugosity, na.rm = TRUE), 2),"
+"0","    sd_rug     = round(sd(mean_rugosity,   na.rm = TRUE), 2),"
+"0","    median_rug = round(median(mean_rugosity, na.rm = TRUE), 2),"
+"0","    .groups    = ""drop"""
+"0","  )"
+"0","print(rug_summary)"
+"1","[38;5;246m# A tibble: 5 × 5[39m
+"
+"1","  dive_site           n mean_rug sd_rug median_rug
+"
+"1","  [3m[38;5;246m<fct>[39m[23m           [3m[38;5;246m<int>[39m[23m    [3m[38;5;246m<dbl>[39m[23m  [3m[38;5;246m<dbl>[39m[23m      [3m[38;5;246m<dbl>[39m[23m
+"
+"1","[38;5;250m1[39m Casablanca         34     17.2   18.7       9.17
+"
+"1","[38;5;250m2[39m Buoy Line          23     22.1   25.2       8.33
+"
+"1","[38;5;250m3[39m Manuels Wall       16     25.4   17.7      26.7 
+"
+"1","[38;5;250m4[39m Grandmas Garden    21     25.3   24.6      15   
+"
+"1","[38;5;250m5[39m Pandora            20     29.0   22.3      19.2 
+"
+"0","kw_rug <- fish_clean |>"
+"0","  filter(!is.na(mean_rugosity)) |>"
+"0","  kruskal_test(mean_rugosity ~ dive_site)"
+"0","cat(""\nKruskal–Wallis (rugosity ~ site):\n""); print(kw_rug)"
+"1","
+Kruskal–Wallis (rugosity ~ site):
+"
+"1","[38;5;246m# A tibble: 1 × 6[39m
+"
+"1","  .y.               n statistic    df      p method        
+"
+"1","[38;5;250m*[39m [3m[38;5;246m<chr>[39m[23m         [3m[38;5;246m<int>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m  [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<chr>[39m[23m         
+"
+"1","[38;5;250m1[39m mean_rugosity   114      8.05     4 0.089[4m8[24m Kruskal-Wallis
+"
+"0","dunn_rug <- fish_clean |>"
+"0","  filter(!is.na(mean_rugosity)) |>"
+"0","  dunn_test(mean_rugosity ~ dive_site, p.adjust.method = ""BH"") |>"
+"0","  add_significance()"
+"0","cat(""\nDunn post-hoc:\n""); print(dunn_rug)"
+"1","
+Dunn post-hoc:
+"
+"1","[38;5;246m# A tibble: 10 × 9[39m
+"
+"1","   .y.           group1          group2             n1    n2 statistic      p p.adj p.adj.signif
+"
+"1","   [3m[38;5;246m<chr>[39m[23m         [3m[38;5;246m<chr>[39m[23m           [3m[38;5;246m<chr>[39m[23m           [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<int>[39m[23m     [3m[38;5;246m<dbl>[39m[23m  [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<chr>[39m[23m       
+"
+"1","[38;5;250m 1[39m mean_rugosity Casablanca      Buoy Line          34    23     0.359 0.719  0.799 ns          
+"
+"1","[38;5;250m 2[39m mean_rugosity Casablanca      Manuels Wall       34    16     1.61  0.107  0.297 ns          
+"
+"1","[38;5;250m 3[39m mean_rugosity Casablanca      Grandmas Garden    34    21     1.56  0.119  0.297 ns          
+"
+"1","[38;5;250m 4[39m mean_rugosity Casablanca      Pandora            34    20     2.46  0.013[4m7[24m 0.137 ns          
+"
+"1","[38;5;250m 5[39m mean_rugosity Buoy Line       Manuels Wall       23    16     1.20  0.229  0.442 ns          
+"
+"1","[38;5;250m 6[39m mean_rugosity Buoy Line       Grandmas Garden    23    21     1.11  0.265  0.442 ns          
+"
+"1","[38;5;250m 7[39m mean_rugosity Buoy Line       Pandora            23    20     1.95  0.050[4m6[24m 0.253 ns          
+"
+"1","[38;5;250m 8[39m mean_rugosity Manuels Wall    Grandmas Garden    16    21    -[31m0[39m[31m.[39m[31m166[39m 0.868  0.868 ns          
+"
+"1","[38;5;250m 9[39m mean_rugosity Manuels Wall    Pandora            16    20     0.615 0.539  0.673 ns          
+"
+"1","[38;5;250m10[39m mean_rugosity Grandmas Garden Pandora            21    20     0.837 0.403  0.575 ns          
+"
+"0","# Rugosity boxplot"
+"0","p_rug <- ggplot("
+"0","  fish_clean |> filter(!is.na(mean_rugosity)),"
+"0","  aes(x = dive_site, y = mean_rugosity, fill = dive_site)) +"
+"0","  geom_boxplot(outlier.shape = NA, alpha = 0.75, width = 0.55) +"
+"0","  geom_jitter(width = 0.18, alpha = 0.5, size = 1.8, colour = ""grey30"") +"
+"0","  stat_summary(fun = mean, geom = ""point"", shape = 23, size = 3.5,"
+"0","               fill = ""white"", colour = ""black"") +"
+"0","  scale_fill_viridis_d(option = ""D"", end = 0.92, guide = ""none"") +"
+"0","  labs("
+"0","    title    = ""Reef Structural Complexity (Maximum Relief) by Site"","
+"0","    subtitle = sprintf(""Kruskal–Wallis: χ²(%.0f) = %.2f, p = %.4f"","
+"0","                       kw_rug$df, kw_rug$statistic, kw_rug$p),"
+"0","    x = NULL, y = ""Mean maximum relief (rugosity score)"""
+"0","  )"
+"0",""
+"0","print(p_rug)"
