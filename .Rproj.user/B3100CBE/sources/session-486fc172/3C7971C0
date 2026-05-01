@@ -3,7 +3,7 @@
     "path": "~/reef-baseline-bocas/analysis_revised.qmd",
     "project_path": "analysis_revised.qmd",
     "type": "quarto_markdown",
-    "hash": "0",
+    "hash": "303032340",
     "contents": "",
     "dirty": false,
     "created": 1777645286545.0,
@@ -13,15 +13,15 @@
         "source_window_id": "",
         "Source": "Source",
         "last_setup_crc32": "486fc17237387afc",
-        "cursorPosition": "10,24",
-        "scrollLine": "0"
+        "cursorPosition": "1213,0",
+        "scrollLine": "1174"
     },
     "folds": "",
-    "lastKnownWriteTime": 1777645939,
+    "lastKnownWriteTime": 1777647076,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1777645939,
+    "last_content_update": 1777647076152,
     "read_only": false,
     "read_only_alternatives": []
 }

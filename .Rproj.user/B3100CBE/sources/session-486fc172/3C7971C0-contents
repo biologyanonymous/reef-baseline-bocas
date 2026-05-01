@@ -55,10 +55,27 @@ mutate <- dplyr::mutate
 theme_reef <- function(base_size = 14) {
   theme_classic(base_size = base_size) +
     theme(
-      plot.title    = element_text(face = "bold", hjust = 0.5),
-      plot.subtitle = element_text(hjust = 0.5, colour = "grey40"),
-      axis.text.x   = element_text(angle = 35, hjust = 1),
+      # Titles — bold, centred, consistent font size
+      plot.title    = element_text(face = "bold", hjust = 0.5,
+                                   size = base_size + 2, family = "sans"),
+      plot.subtitle = element_text(hjust = 0.5, colour = "grey40",
+                                   size = base_size - 2, family = "sans"),
+      plot.caption  = element_text(size = base_size - 6, colour = "grey55",
+                                   family = "sans", hjust = 1),
+      # Axis text and titles
+      axis.title    = element_text(face = "bold", size = base_size,
+                                   family = "sans"),
+      axis.text     = element_text(size = base_size - 2, family = "sans"),
+      axis.text.x   = element_text(angle = 35, hjust = 1,
+                                   size = base_size - 2, family = "sans"),
+      # Legend
+      legend.title  = element_text(face = "bold", size = base_size - 1,
+                                   family = "sans"),
+      legend.text   = element_text(size = base_size - 2, family = "sans"),
       legend.position = "right",
+      # Facet strip labels
+      strip.text    = element_text(face = "bold", size = base_size - 1,
+                                   family = "sans"),
       strip.background = element_blank()
     )
 }
@@ -77,7 +94,7 @@ site_palette <- setNames(viridis::viridis(5, option = "D", end = 0.92), site_lev
 
 ## 1  Data Import and Cleaning
 
-```{r data-import}
+```{r data-import, warning=FALSE}
 #| label: data-import
 
 # site_levels defined here too so this chunk can be run independently
@@ -550,9 +567,10 @@ p_disp <- ggplot(substrate_long_raw,
   facet_wrap(~ category, scales = "free_y", ncol = 3) +
   scale_colour_viridis_d(option = "D", end = 0.92, guide = "none") +
   scale_fill_viridis_d(option = "D", end = 0.92, guide = "none") +
-  labs(title = "Benthic Cover by Site (mean ± SE + raw transects)",
+  labs(title = "Benthic Cover by Site (mean \u00b1 SE + raw transects)",
        x = NULL, y = "Percent cover (%)") +
-  theme(axis.text.x = element_text(angle = 40, hjust = 1, size = 9))
+  theme(axis.text.x = element_text(angle = 40, hjust = 1,
+                                   size = 11, family = "sans"))
 
 print(p_disp)
 ggsave("figures/fig4_dispersion_facets.png", p_disp,
@@ -661,9 +679,19 @@ p_map_main <- ggplot() +
   annotation_north_arrow(location = "tr", which_north = "true",
                          style = north_arrow_minimal()) +
   labs(x = "Longitude", y = "Latitude") +
-  theme_bw(base_size = 11) +
-  theme(legend.position = "right",
-        plot.caption = element_text(size = 7, colour = "grey50"))
+  theme_bw(base_size = 14) +
+  theme(
+    plot.title   = element_text(face = "bold", hjust = 0.5,
+                                size = 16, family = "sans"),
+    plot.subtitle= element_text(hjust = 0.5, colour = "grey40",
+                                size = 12, family = "sans"),
+    plot.caption = element_text(size = 8, colour = "grey55", family = "sans"),
+    axis.title   = element_text(face = "bold", size = 14, family = "sans"),
+    axis.text    = element_text(size = 12, family = "sans"),
+    legend.title = element_text(face = "bold", size = 13, family = "sans"),
+    legend.text  = element_text(size = 12, family = "sans"),
+    legend.position = "right"
+  )
 
 # ---- Inset context map (Panama overview, no tiles needed) ----
 panama_ctx <- ne_countries(country = "Panama", scale = "medium", returnclass = "sf")
@@ -722,10 +750,12 @@ pheatmap(
   angle_col       = 45,
   cellwidth       = 60, cellheight = 45,
   fontsize        = 12,
+  fontsize_row    = 12,
+  fontsize_col    = 11,
   display_numbers = TRUE,
   number_format   = "%.1f%%",
   number_color    = "white",
-  fontsize_number = 10,
+  fontsize_number = 11,
   main            = "Mean Benthic Cover (%) by Site",
   filename        = "figures/fig_heatmap_substrate.png",
   width = 8, height = 5
@@ -740,10 +770,12 @@ pheatmap(
   angle_col       = 45,
   cellwidth       = 60, cellheight = 45,
   fontsize        = 12,
+  fontsize_row    = 12,
+  fontsize_col    = 11,
   display_numbers = TRUE,
   number_format   = "%.1f%%",
   number_color    = "white",
-  fontsize_number = 10,
+  fontsize_number = 11,
   main            = "Mean Benthic Cover (%) by Site"
 )
 ```
@@ -756,7 +788,7 @@ pheatmap(
 
 ```{r fish-heatmaps}
 #| label: fish-heatmaps
-#| fig-cap: "Figure 7 (revised). Fish group abundance by site (log₁₊ₓ transformed). Y-axis label: site; x-axis: functional group."
+#| fig-cap: "Figure 7 (revised). Fish group abundance by site (log(1+x) transformed). Y-axis: site; x-axis: functional group."
 
 site_fish_mat <- fish_clean |>
   filter(!is.na(dive_site)) |>
@@ -775,27 +807,30 @@ mat_log <- log1p(site_fish_mat)
 
 pheatmap(
   mat_log,
-  color        = viridis::viridis(100, option = "B"),
-  cluster_rows = FALSE, cluster_cols = FALSE,
-  border_color = NA,
-  angle_col    = 45,
-  cellwidth    = 32, cellheight = 40,
-  fontsize     = 11,
-  main         = "Fish Group Abundance by Site (log₁₊ₓ scale)",
-  legend_labels = c("Low", "", "", "", "High"),
-  # R1.13: y-axis now shows "Site"; x-axis shows functional group
-  filename     = "figures/fig7_fish_heatmap_viridis.png",
+  color           = viridis::viridis(100, option = "B"),
+  cluster_rows    = FALSE, cluster_cols = FALSE,
+  border_color    = NA,
+  angle_col       = 45,
+  cellwidth       = 32, cellheight = 40,
+  fontsize        = 11,
+  fontsize_row    = 11,
+  fontsize_col    = 10,
+  main            = "Fish Group Abundance by Site  [log(1+x) scale]",
+  legend_labels   = c("Low", "", "", "", "High"),
+  filename        = "figures/fig7_fish_heatmap_viridis.png",
   width = 12, height = 6
 )
 
 pheatmap(
   mat_log,
-  color        = viridis::viridis(100, option = "B"),
-  cluster_rows = FALSE, cluster_cols = FALSE,
-  border_color = NA, angle_col = 45,
-  cellwidth    = 32, cellheight = 40,
-  fontsize     = 11,
-  main         = "Fish Group Abundance by Site (log₁₊ₓ scale)"
+  color           = viridis::viridis(100, option = "B"),
+  cluster_rows    = FALSE, cluster_cols = FALSE,
+  border_color    = NA, angle_col = 45,
+  cellwidth       = 32, cellheight = 40,
+  fontsize        = 11,
+  fontsize_row    = 11,
+  fontsize_col    = 10,
+  main            = "Fish Group Abundance by Site  [log(1+x) scale]"
 )
 ```
 
@@ -818,7 +853,7 @@ p_fish_bar <- ggplot(group_sums,
   scale_fill_viridis_d(option = "C", end = 0.9, guide = "none") +
   labs(title = "Fish Group Abundance Across All Sites",
        x = NULL, y = "Total count") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12, family = "sans"))
 
 print(p_fish_bar)
 ggsave("figures/fig_fish_bar.png", p_fish_bar, width = 11, height = 6.5, dpi = 300)
@@ -1108,6 +1143,10 @@ p_bleach_time <- ggplot(bleach_yearly,
 
 print(p_bleach_time)
 
+
+ggsave("figures/fig_bleaching_temporal.png", p_bleach_time,
+       width = 9, height = 6, dpi = 300)
+
 # ---- 8. Supplementary: raw transect points per year (violin + jitter) ----------
 # Gives reviewer a view of the full distribution, not just the mean
 p_bleach_violin <- ggplot(
@@ -1171,4 +1210,5 @@ cat(paste(" •", figs), sep = "\n")
 ```{r session-info}
 sessionInfo()
 ```
+
 
