@@ -30,16 +30,26 @@ pkgs <- c(
   "rstatix", "multcompView",              # stats + letters
   "vegan",                                # PERMANOVA / community ecology
   "scatterpie",                           # pie-chart map
-  "sf", "rnaturalearth", "rnaturalearthhires", # map layers
+  "sf", "rnaturalearth",                  # map layers (medium scale, no rnaturalearthhires needed)
   "ggspatial",                            # scale bar & north arrow
   "pheatmap",                             # heatmaps
   "corrplot",                             # correlation plots
-  "knitr", "kableExtra"                   # nice tables
+  "knitr", "kableExtra"                  # nice tables
 )
 for (p in pkgs) {
   if (!requireNamespace(p, quietly = TRUE)) install.packages(p)
 }
 lapply(pkgs, library, character.only = TRUE)
+
+# ---- Resolve namespace conflicts ------------------------------------------------
+# ggspatial/rnaturalearth load 'raster' as a dependency. raster::select() masks
+# dplyr::select(), which breaks all dplyr pipes. Pin the key verbs to dplyr
+# so every chunk works regardless of load order.
+select <- dplyr::select
+filter <- dplyr::filter
+rename <- dplyr::rename
+mutate <- dplyr::mutate
+# ---------------------------------------------------------------------------------
 
 # ---- Global figure theme (colourblind-safe, all figures match) ----
 theme_reef <- function(base_size = 14) {
@@ -70,93 +80,64 @@ site_palette <- setNames(viridis::viridis(5, option = "D", end = 0.92), site_lev
 ```{r data-import}
 #| label: data-import
 
-# ---- Substrate composition ----
-meta_cols_sub <- c("date", "dive_site", "sd", "depth_start", "depth_end", "temperature_c")
+# site_levels defined here too so this chunk can be run independently
+# (also set in setup chunk — whichever runs first wins, no conflict)
+site_levels <- c("Casablanca", "Buoy Line", "Manuels Wall", "Grandmas Garden", "Pandora")
 
-substrate_raw <- read_excel(
-  "data/raw_data.xlsx",
-  sheet    = "Substrate composition 2023-2025",
-  col_types = rep(c("date", "text", "numeric"), c(1, 1, 39)),
-  guess_max = 2000
-) |>
-  clean_names() |>
-  mutate(across(-all_of(meta_cols_sub), ~ replace_na(., 0))) |>
+# Column groups used throughout the script
+# Fix: abiotic = hard substrate only (si=silt, sa=sand, rb=rubble, rk=rock)
+# oc, bc, fc, an, cm, tu, bcm are other benthic/invertebrate codes → "other benthic"
+abiotic_cols       <- c("si", "sa", "rb", "rk")
+other_benthic_cols <- c("oc", "bc", "fc", "an", "cm", "tu", "bcm")
+algae_cols         <- c("al_tf", "al_fma", "al_cca", "al_pac")
+sponge_cols        <- c("sp_rp", "sp_ba", "sp_gb", "sp_en", "sp_tb", "sp_ag")
+coral_cols         <- c("co_ma", "co_le", "co_br", "co_mb", "co_fl", "co_so", "co_di")
+
+# ---- Substrate: read the already-cleaned CSV from data/ ----
+# substrate_cleaned.csv was produced by the original analysis.R cleaning pipeline.
+# It already has abiotic_prop, algae_prop, sponge_prop, coral_prop, other_prop
+# and all individual substrate columns. We just add pct columns + time fields.
+substrate_clean <- read_csv("data/substrate_cleaned.csv", show_col_types = FALSE) |>
+  mutate(
+    date       = lubridate::as_date(lubridate::parse_date_time(date,
+                   orders = c("ymd", "dmy", "mdy", "ymd HMS", "dmy HMS"))),
+    # Fix 3: str_trim before any site matching
+    dive_site  = str_trim(dive_site),
+    # Recompute proportions with corrected groupings from raw columns.
+    # abiotic = si + sa + rb + rk (hard substrate only)
+    # other_benthic = oc + bc + fc + an + cm + tu + bcm + unknown
+    abiotic_pts       = rowSums(across(any_of(abiotic_cols)),       na.rm = TRUE),
+    other_benthic_pts = rowSums(across(any_of(other_benthic_cols)), na.rm = TRUE) +
+                        coalesce(unknown, 0L),
+    coral_pct         = coral_prop * 100,
+    algae_pct         = algae_prop * 100,
+    sponge_pct        = sponge_prop * 100,
+    abiotic_pct       = (abiotic_pts / total_data_points) * 100,
+    other_benthic_pct = (other_benthic_pts / total_data_points) * 100,
+    # recompute props to match (used in PERMANOVA community matrix)
+    abiotic_prop       = abiotic_pct / 100,
+    other_benthic_prop = other_benthic_pct / 100,
+    mean_depth = (depth_start + depth_end) / 2,
+    year       = as.integer(lubridate::year(date)),
+    month_year = format(date, "%b %Y"),
+    dive_site  = factor(dive_site, levels = site_levels)
+  ) |>
   filter(!is.na(dive_site))
 
-# Standardise site names
-standardise_site <- function(x) {
-  x <- str_to_lower(str_squish(x))
-  case_when(
-    x %in% c("casablanca", "casa blanca")             ~ "Casablanca",
-    x %in% c("bouy line", "buoy line", "buoyline")    ~ "Buoy Line",
-    x == "grandmas garden"                             ~ "Grandmas Garden",
-    x %in% c("manuels wall", "manuel's wall")          ~ "Manuels Wall",
-    x == "pandora"                                     ~ "Pandora",
-    TRUE                                               ~ NA_character_
-  )
-}
+# ---- Fish: read the already-cleaned summary CSV from data/ ----
+# fish_summary_cleaned.csv has rug_ columns and total_ columns already.
+rug_cols        <- grep("^rug_", names(read_csv("data/fish_summary_cleaned.csv",
+                                                 n_max = 0, show_col_types = FALSE)), value = TRUE)
+total_cols_fish <- grep("^total_", names(read_csv("data/fish_summary_cleaned.csv",
+                                                   n_max = 0, show_col_types = FALSE)), value = TRUE)
 
-substrate_raw <- substrate_raw |> mutate(dive_site = standardise_site(dive_site))
-
-# Filter valid transects (115–120 pts), fill missing pts as UNKNOWN
-abiotic_cols <- c("si", "sa", "rb", "rk", "oc", "bc", "fc", "an", "cm", "tu", "bcm")
-algae_cols   <- c("al_tf", "al_fma", "al_cca", "al_pac")
-sponge_cols  <- c("sp_rp", "sp_ba", "sp_gb", "sp_en", "sp_tb", "sp_ag")
-coral_cols   <- c("co_ma", "co_le", "co_br", "co_mb", "co_fl", "co_so", "co_di")
-
-substrate_clean <- substrate_raw |>
-  filter(total_data_points >= 115, total_data_points <= 120) |>
+fish_clean <- read_csv("data/fish_summary_cleaned.csv", show_col_types = FALSE) |>
   mutate(
-    missing_points   = 120 - total_data_points,
-    unknown          = unknown + missing_points,
-    total_data_points = 120
-  ) |>
-  select(-matches("total$|algae_prop|sp_total|co_total|others_total")) |>
-  rowwise() |>
-  mutate(
-    abiotic = sum(c_across(any_of(abiotic_cols)), na.rm = TRUE),
-    algae   = sum(c_across(any_of(algae_cols)),   na.rm = TRUE),
-    sponge  = sum(c_across(any_of(sponge_cols)),  na.rm = TRUE),
-    coral   = sum(c_across(any_of(coral_cols)),   na.rm = TRUE),
-    other   = unknown
-  ) |>
-  ungroup() |>
-  mutate(
-    coral_prop   = coral   / 120,
-    algae_prop   = algae   / 120,
-    sponge_prop  = sponge  / 120,
-    abiotic_prop = abiotic / 120,
-    other_prop   = other   / 120,
-    coral_pct    = coral_prop   * 100,
-    algae_pct    = algae_prop   * 100,
-    sponge_pct   = sponge_prop  * 100,
-    abiotic_pct  = abiotic_prop * 100,
-    other_pct    = other_prop   * 100,
-    mean_depth   = (depth_start + depth_end) / 2,
-    year         = as.integer(format(date, "%Y")),
-    month_year   = format(date, "%b %Y"),
-    dive_site    = factor(dive_site, levels = site_levels)
-  ) |>
-  filter(!is.na(dive_site))   # drop any rows whose site didn't match
-
-# ---- Fish data ----
-meta_cols_fish <- c("date", "dive_site", "depth_start", "depth_end", "temperature_c")
-
-fish_raw <- read_excel("data/raw_data.xlsx", sheet = "Fish 2024-2025") |>
-  clean_names() |>
-  filter(!is.na(dive_site)) |>
-  mutate(dive_site = standardise_site(dive_site)) |>
-  mutate(across(-all_of(meta_cols_fish), ~ as.numeric(gsub("\\+", "", as.character(.))))) |>
-  mutate(across(-all_of(meta_cols_fish), ~ replace_na(., 0)))
-
-rug_cols        <- grep("^rug_", names(fish_raw), value = TRUE)
-total_cols_fish <- grep("^total_", names(fish_raw), value = TRUE)
-
-fish_clean <- fish_raw |>
-  mutate(
-    dive_site    = factor(dive_site, levels = site_levels),
+    date          = lubridate::as_date(lubridate::parse_date_time(date,
+                      orders = c("ymd", "dmy", "mdy", "ymd HMS", "dmy HMS"))),
+    dive_site     = factor(dive_site, levels = site_levels),
     mean_rugosity = rowMeans(across(all_of(rug_cols)), na.rm = TRUE),
-    year         = as.integer(format(date, "%Y"))
+    year          = as.integer(lubridate::year(date))
   ) |>
   filter(!is.na(dive_site))
 
@@ -165,7 +146,20 @@ fish_names <- c("Parrotfish", "Algal-farming Damselfish", "Grunts", "Butterflyfi
                 "Angelfish", "Porcupinefish", "Triggerfish", "Filefish",
                 "Lionfish", "Porgys", "Chubs", "Barracudas")
 
-# ---- Coral health data ----
+# ---- Coral health: read from raw_data.xlsx (no pre-cleaned CSV exists) ----
+standardise_site <- function(x) {
+  # Fix 3: str_trim first, then str_squish, then match
+  x <- str_to_lower(str_squish(str_trim(x)))
+  case_when(
+    x %in% c("casablanca", "casa blanca")          ~ "Casablanca",
+    x %in% c("bouy line", "buoy line", "buoyline") ~ "Buoy Line",
+    x == "grandmas garden"                          ~ "Grandmas Garden",
+    x %in% c("manuels wall", "manuel's wall")       ~ "Manuels Wall",
+    x == "pandora"                                  ~ "Pandora",
+    TRUE                                            ~ NA_character_
+  )
+}
+
 coral_health_raw <- read_excel(
   "data/raw_data.xlsx", sheet = "Coral health 2023-2025", guess_max = 2000
 ) |>
@@ -180,22 +174,23 @@ coral_health_long <- coral_health_raw |>
   fill(date, dive_site, .direction = "down") |>
   filter(!is.na(coral_type)) |>
   mutate(
+    date        = as.Date(date),
     transect_id = paste(date, dive_site, sep = "_"),
     dive_site   = factor(dive_site, levels = site_levels),
-    year        = as.integer(format(date, "%Y")),
+    year        = as.integer(lubridate::year(date)),
     month_year  = format(date, "%b %Y"),
-    he    = as.numeric(he),
-    dg_m  = as.numeric(dg_m),
-    dg_h  = as.numeric(dg_h),
-    de    = as.numeric(de),
-    pa    = as.numeric(pa),
-    pb    = as.numeric(pb),
-    fb    = as.numeric(fb)
+    he   = as.numeric(he),
+    dg_m = as.numeric(dg_m),
+    dg_h = as.numeric(dg_h),
+    de   = as.numeric(de),
+    pa   = as.numeric(pa),
+    pb   = as.numeric(pb),
+    fb   = as.numeric(fb)
   ) |>
   filter(!is.na(dive_site))
 
 cat("=== Data loaded ===\n")
-cat("Substrate transects retained:", nrow(substrate_clean), "\n")
+cat("Substrate transects:", nrow(substrate_clean), "\n")
 cat("Fish transects:", nrow(fish_clean), "\n")
 cat("Coral health rows:", nrow(coral_health_long), "\n")
 cat("Sites:", paste(site_levels, collapse = ", "), "\n")
@@ -280,17 +275,12 @@ dunn_coral <- substrate_clean |>
   add_significance()
 print(dunn_coral)
 
-# Compact letter display for boxplot annotation
-pv_coral <- setNames(dunn_coral$p.adj,
-                     paste(dunn_coral$group1, dunn_coral$group2, sep = "-"))
-letters_coral <- multcompLetters(pv_coral)$Letters
-letters_coral_df <- data.frame(
-  dive_site = factor(names(letters_coral), levels = site_levels),
-  letter    = letters_coral,
-  y_pos     = max(substrate_clean$coral_pct, na.rm = TRUE) * 1.08
-)
-cat("\nCompact letter display (coral cover, BH-adjusted Dunn test):\n")
-print(letters_coral_df)
+# Significance labels: only mark pairs that ARE significantly different (p.adj < 0.05)
+# CLD compact letters are not used because overlapping significance groups
+# produce multi-letter codes (e.g. "ac") that are ambiguous on a figure.
+# Full pairwise results are printed in the table above.
+# For the boxplot we annotate only the y-position max (used to set plot ceiling).
+coral_ymax <- max(substrate_clean$coral_pct, na.rm = TRUE) * 1.12
 ```
 
 ### 3.2  Kruskal–Wallis + Dunn post-hoc: algae cover
@@ -306,16 +296,7 @@ dunn_algae <- substrate_clean |>
   add_significance()
 print(dunn_algae)
 
-pv_algae <- setNames(dunn_algae$p.adj,
-                     paste(dunn_algae$group1, dunn_algae$group2, sep = "-"))
-letters_algae <- multcompLetters(pv_algae)$Letters
-letters_algae_df <- data.frame(
-  dive_site = factor(names(letters_algae), levels = site_levels),
-  letter    = letters_algae,
-  y_pos     = max(substrate_clean$algae_pct, na.rm = TRUE) * 1.08
-)
-cat("\nCompact letter display (algae cover):\n")
-print(letters_algae_df)
+algae_ymax <- max(substrate_clean$algae_pct, na.rm = TRUE) * 1.12
 ```
 
 ### 3.3  PERMANOVA: multivariate community composition
@@ -325,14 +306,18 @@ print(letters_algae_df)
 ```{r permanova}
 #| label: permanova
 
-set.seed(42)
+set.seed(42)  # makes permutation results reproducible
 
-# Community matrix: 5 broad substrate categories (proportions)
+# Build community matrix: each row = one transect, columns = 5 broad cover categories.
+# Using proportions (not raw counts) so transects are comparable regardless of
+# whether 115 or 120 points were recorded.
 comm_matrix <- substrate_clean |>
-  select(coral_prop, algae_prop, sponge_prop, abiotic_prop, other_prop) |>
+  select(coral_prop, algae_prop, sponge_prop, abiotic_prop, other_benthic_prop) |>
   as.matrix()
 
-# PERMANOVA (adonis2, vegan) — site as explanatory variable
+# PERMANOVA (adonis2) — tests whether the multivariate community composition
+# differs significantly between reef sites. Uses Bray-Curtis dissimilarity,
+# which handles proportional data well and down-weights rare categories.
 perm_result <- adonis2(
   comm_matrix ~ dive_site,
   data   = substrate_clean,
@@ -341,8 +326,11 @@ perm_result <- adonis2(
 )
 print(perm_result)
 
-# PERMDISP: test homogeneity of dispersions (required assumption check)
-dist_bray <- vegdist(comm_matrix, method = "bray")
+# PERMDISP — checks a key assumption of PERMANOVA: that within-group dispersions
+# (spread around group centroids) are homogeneous across sites. If p < 0.05 here,
+# any PERMANOVA significance may reflect differences in dispersion rather than
+# differences in mean community composition.
+dist_bray  <- vegdist(comm_matrix, method = "bray")
 dispersion <- betadisper(dist_bray, substrate_clean$dive_site)
 permutest(dispersion, permutations = 999)
 ```
@@ -354,15 +342,25 @@ permutest(dispersion, permutations = 999)
 ```{r correlations}
 #| label: correlations
 
+# Select the five benthic cover variables for correlation analysis.
+# Both Pearson (parametric, sensitive to linear relationships) and
+# Spearman (rank-based, robust to non-normality) are reported so the
+# reviewer can see that conclusions hold under both assumptions.
 cover_df <- substrate_clean |>
-  select(coral_pct, algae_pct, sponge_pct, abiotic_pct, other_pct)
+  select(coral_pct, algae_pct, sponge_pct, abiotic_pct, other_benthic_pct)
+
+# Professional display names for the corrplot axis labels
+corr_labels <- c("Hard coral (%)", "Macroalgae (%)", "Sponge (%)",
+                 "Abiotic (%)", "Other benthic (%)")
 
 cat("--- Pearson correlation matrix ---\n")
-pearson_mat <- cor(cover_df, use = "complete.obs", method = "pearson")
+pearson_mat  <- cor(cover_df, use = "complete.obs", method = "pearson")
+spearman_mat <- cor(cover_df, use = "complete.obs", method = "spearman")
+rownames(pearson_mat)  <- colnames(pearson_mat)  <- corr_labels
+rownames(spearman_mat) <- colnames(spearman_mat) <- corr_labels
 print(round(pearson_mat, 3))
 
 cat("\n--- Spearman correlation matrix ---\n")
-spearman_mat <- cor(cover_df, use = "complete.obs", method = "spearman")
 print(round(spearman_mat, 3))
 
 # Significance tests (Pearson)
@@ -385,7 +383,7 @@ corrplot(spearman_mat, method = "color", col = viridis(200, option = "D"),
          title = "Spearman correlations", mar = c(0, 0, 1.5, 0))
 dev.off()
 
-# Inline display
+# Inline display side by side
 par(mfrow = c(1, 2), mar = c(0, 0, 2, 0))
 corrplot(pearson_mat,  method = "color", col = viridis(200, option = "D"),
          addCoef.col = "white", number.cex = 0.7, tl.col = "black",
@@ -415,25 +413,18 @@ year_cols  <- setNames(viridis::plasma(length(year_vals), end = 0.85), year_vals
 
 p_coral <- ggplot(substrate_clean,
                   aes(x = dive_site, y = coral_pct)) +
-  # box
   geom_boxplot(aes(fill = dive_site),
                outlier.shape = NA, alpha = 0.7, width = 0.55,
                colour = "grey30") +
-  # jittered raw points coloured by year (R1.8)
   geom_jitter(aes(colour = factor(year)),
               width = 0.18, size = 1.6, alpha = 0.75) +
-  # mean diamond (R1.7)
   stat_summary(fun = mean, geom = "point", shape = 23,
                size = 3.5, fill = "white", colour = "black") +
-  # significance letters (R1.9)
-  geom_text(data = letters_coral_df,
-            aes(x = dive_site, y = y_pos, label = letter),
-            size = 5, fontface = "bold", inherit.aes = FALSE) +
   scale_fill_viridis_d(option = "D", end = 0.92, guide = "none") +
   scale_colour_manual(values = year_cols, name = "Survey year") +
   labs(
     title    = "Coral Cover (%) by Site",
-    subtitle = sprintf("Kruskal–Wallis: χ²(%.0f) = %.2f, p = %.4f",
+    subtitle = sprintf("Kruskal–Wallis: χ²(%d) = %.2f, p = %.4f  (pairwise Dunn BH results in table above)",
                        kw_coral$df, kw_coral$statistic, kw_coral$p),
     x = NULL, y = "Coral Cover (%)"
   )
@@ -456,14 +447,11 @@ p_algae <- ggplot(substrate_clean,
               width = 0.18, size = 1.6, alpha = 0.75) +
   stat_summary(fun = mean, geom = "point", shape = 23,
                size = 3.5, fill = "white", colour = "black") +
-  geom_text(data = letters_algae_df,
-            aes(x = dive_site, y = y_pos, label = letter),
-            size = 5, fontface = "bold", inherit.aes = FALSE) +
   scale_fill_viridis_d(option = "D", end = 0.92, guide = "none") +
   scale_colour_manual(values = year_cols, name = "Survey year") +
   labs(
     title    = "Macroalgae Cover (%) by Site",
-    subtitle = sprintf("Kruskal–Wallis: χ²(%.0f) = %.2f, p = %.4f",
+    subtitle = sprintf("Kruskal–Wallis: χ²(%d) = %.2f, p = %.4f  (pairwise Dunn BH results in table above)",
                        kw_algae$df, kw_algae$statistic, kw_algae$p),
     x = NULL, y = "Macroalgae Cover (%)"
   )
@@ -483,23 +471,30 @@ ggsave("figures/fig2b_algae_boxplot.png", p_algae,
 #| label: fig3-stacked
 #| fig-cap: "Figure 3. Mean benthic substrate composition per site. All bars sum to 100% across five broad categories. Values are averaged across transects per site."
 
-# Mean proportions per site (all 5 cats guaranteed to sum to 1)
+# Mean proportions per site — 6 corrected categories, verified to sum to 100%
 substrate_summary_site <- substrate_clean |>
   group_by(dive_site) |>
-  summarise(across(c(coral_prop, algae_prop, sponge_prop, abiotic_prop, other_prop),
-                   ~ mean(., na.rm = TRUE) * 100),
-            .groups = "drop")
+  summarise(
+    coral_pct         = mean(coral_pct,         na.rm = TRUE),
+    algae_pct         = mean(algae_pct,         na.rm = TRUE),
+    sponge_pct        = mean(sponge_pct,        na.rm = TRUE),
+    abiotic_pct       = mean(abiotic_pct,       na.rm = TRUE),
+    other_benthic_pct = mean(other_benthic_pct, na.rm = TRUE),
+    .groups = "drop"
+  )
 
 substrate_long_plot <- substrate_summary_site |>
   pivot_longer(-dive_site, names_to = "substrate", values_to = "pct") |>
   mutate(
     substrate = factor(substrate,
-      levels = c("coral_prop", "algae_prop", "sponge_prop", "abiotic_prop", "other_prop"),
-      labels = c("Hard coral", "Macroalgae", "Sponge", "Abiotic", "Other/Unknown")
+      levels = c("coral_pct", "algae_pct", "sponge_pct",
+                 "abiotic_pct", "other_benthic_pct"),
+      labels = c("Hard coral", "Macroalgae", "Sponge",
+                 "Abiotic (si, sa, rb, rk)", "Other benthic")
     )
   )
 
-# Verify bars sum to ~100 (QC)
+# QC: bars should all sum to ~100
 bar_check <- substrate_long_plot |>
   group_by(dive_site) |> summarise(total = sum(pct))
 cat("Bar totals (should all be ~100):\n"); print(bar_check)
@@ -510,7 +505,7 @@ p_stacked <- ggplot(substrate_long_plot,
                     aes(x = dive_site, y = pct, fill = substrate)) +
   geom_bar(stat = "identity", position = "stack", colour = "white", linewidth = 0.3) +
   scale_fill_manual(values = inferno5, name = "Substrate category") +
-  labs(title = "Benthic Composition by Site (all categories → 100%)",
+  labs(title = "Benthic Composition by Site",
        x = NULL, y = "Mean percent cover (%)") +
   coord_cartesian(ylim = c(0, 103))
 
@@ -529,13 +524,19 @@ ggsave("figures/fig3_stacked_bars_100pct.png", p_stacked,
 #| label: fig4-dispersion
 #| fig-cap: "Figure 4. Mean (± SE) benthic category cover per site. Points show individual transect values. Panels separate categories for clarity."
 
+# Reshape to long format so all five categories can be faceted in one plot.
+# free_y scale lets each panel use its own y-axis range, making variation
+# visible even for low-cover categories like sponge.
 substrate_long_raw <- substrate_clean |>
-  select(dive_site, year, coral_pct, algae_pct, sponge_pct, abiotic_pct, other_pct) |>
-  pivot_longer(c(coral_pct, algae_pct, sponge_pct, abiotic_pct, other_pct),
+  select(dive_site, year, coral_pct, algae_pct, sponge_pct,
+         abiotic_pct, other_benthic_pct) |>
+  pivot_longer(c(coral_pct, algae_pct, sponge_pct, abiotic_pct, other_benthic_pct),
                names_to = "category", values_to = "pct") |>
   mutate(category = factor(category,
-    levels = c("coral_pct", "algae_pct", "sponge_pct", "abiotic_pct", "other_pct"),
-    labels = c("Hard coral", "Macroalgae", "Sponge", "Abiotic", "Other/Unknown")
+    levels = c("coral_pct", "algae_pct", "sponge_pct",
+               "abiotic_pct", "other_benthic_pct"),
+    labels = c("Hard coral", "Macroalgae", "Sponge",
+               "Abiotic (si, sa, rb, rk)", "Other benthic")
   ))
 
 p_disp <- ggplot(substrate_long_raw,
@@ -567,7 +568,9 @@ ggsave("figures/fig4_dispersion_facets.png", p_disp,
 ```{r morphotype-stats}
 #| label: morphotype-stats
 
-# Build morphotype count matrix per site
+# ---- Morphotype chi-squared: are growth-form frequencies independent of site? ----
+# Count matrix: rows = sites, columns = coral morphotypes (raw point-count totals).
+# Chi-squared tests whether the distribution of morphotypes is the same at all sites.
 morph_mat <- substrate_clean |>
   group_by(dive_site) |>
   summarise(across(all_of(coral_cols), ~ sum(., na.rm = TRUE)), .groups = "drop") |>
@@ -629,52 +632,65 @@ site_coords <- tibble(
 map_data <- left_join(coral_props_site, site_coords, by = "dive_site") |>
   mutate(r = coral_total / max(coral_total, na.rm = TRUE) * 0.0008 + 0.0003)
 
-# Base map (rnaturalearth — no API key required; citable)
-panama <- ne_countries(country = "Panama", scale = "large", returnclass = "sf")
+# Base map — OSM tiles via ggspatial (no extra packages; uses cached tiles)
+# ne_countries medium scale doesn't resolve the small Bocas del Toro islands,
+# so we use OpenStreetMap tiles for the local basemap instead.
 
 morph_palette <- setNames(viridis::viridis(7, option = "C", end = 0.95), prop_cols)
 morph_labels  <- setNames(coral_morph_names, prop_cols)
 
-p_map <- ggplot() +
-  geom_sf(data = panama, fill = "grey88", colour = "grey60") +
-  coord_sf(xlim = c(-82.228, -82.216), ylim = c(9.318, 9.335), expand = FALSE) +
+# ---- Main map: OSM tile background + pie charts ----
+p_map_main <- ggplot() +
+  annotation_map_tile(type = "osm", zoom = 15, quiet = TRUE) +
+  coord_sf(xlim = c(-82.228, -82.216), ylim = c(9.318, 9.336),
+           crs = sf::st_crs(4326), expand = FALSE) +
   geom_scatterpie(
     aes(x = longitude, y = latitude, group = dive_site, r = r),
     data  = map_data,
     cols  = prop_cols,
     alpha = 0.9
   ) +
-  scale_fill_manual(
-    values = morph_palette,
-    labels = morph_labels,
-    name   = "Coral morphotype"
-  ) +
-  geom_text(
-    data = map_data,
-    aes(x = longitude, y = latitude, label = dive_site),
-    hjust = -0.12, vjust = 0.4, size = 3.2, fontface = "bold"
-  ) +
-  # Scale bar and north arrow (ggspatial) — addresses R1.1 (add scale)
+  scale_fill_manual(values = morph_palette, labels = morph_labels,
+                    name = "Coral morphotype") +
+  geom_label(data = map_data,
+             aes(x = longitude, y = latitude, label = dive_site),
+             hjust = -0.08, vjust = 0.5, size = 3.0, fontface = "bold",
+             label.size = 0, fill = alpha("white", 0.6),
+             inherit.aes = FALSE) +
   annotation_scale(location = "bl", width_hint = 0.3) +
-  annotation_north_arrow(
-    location = "tr", which_north = "true",
-    style    = north_arrow_minimal()
+  annotation_north_arrow(location = "tr", which_north = "true",
+                         style = north_arrow_minimal()) +
+  labs(x = "Longitude", y = "Latitude") +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "right",
+        plot.caption = element_text(size = 7, colour = "grey50"))
+
+# ---- Inset context map (Panama overview, no tiles needed) ----
+panama_ctx <- ne_countries(country = "Panama", scale = "medium", returnclass = "sf")
+p_inset <- ggplot() +
+  geom_sf(data = panama_ctx, fill = "grey80", colour = "grey50", linewidth = 0.3) +
+  annotate("point", x = -82.222, y = 9.327,
+           colour = "firebrick", size = 3, shape = 17) +
+  coord_sf(xlim = c(-83.2, -77.2), ylim = c(7.2, 11.2), expand = FALSE) +
+  theme_void(base_size = 9) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8))
+
+p_map <- p_map_main +
+  annotation_custom(
+    grob  = ggplotGrob(p_inset),
+    xmin  = -82.2175, xmax = -82.216,
+    ymin  = 9.331,    ymax  = 9.336
   ) +
   labs(
     title    = "Coral Growth-Form Composition at Isla Solarte Reef Sites",
     subtitle = "Pie area ∝ mean coral cover; colours = morphotype proportion",
-    x = "Longitude", y = "Latitude",
     caption  = paste0(
-      "Map layers: Natural Earth (rnaturalearth v",
-      packageVersion("rnaturalearth"), "). ",
+      "Basemap © OpenStreetMap contributors. ",
       "Produced with R/ggplot2 v", packageVersion("ggplot2"),
       ", sf v", packageVersion("sf"),
       ", ggspatial v", packageVersion("ggspatial"), "."
     )
-  ) +
-  theme_bw(base_size = 12) +
-  theme(legend.position = "right",
-        plot.caption = element_text(size = 7, colour = "grey50"))
+  )
 
 print(p_map)
 ggsave("figures/fig5_morphotype_map_scalebar.png", p_map,
@@ -694,32 +710,41 @@ ggsave("figures/fig5_morphotype_map_scalebar.png", p_map,
 heat_mat <- substrate_summary_site |>
   column_to_rownames("dive_site") |>
   as.matrix()
-colnames(heat_mat) <- c("Hard coral", "Macroalgae", "Sponge", "Abiotic", "Other/Unknown")
+colnames(heat_mat) <- c("Hard coral", "Macroalgae", "Sponge",
+                        "Abiotic (si,sa,rb,rk)", "Other benthic")
 
 pheatmap(
   heat_mat,
-  color         = viridis::viridis(100, option = "D"),
-  cluster_rows  = FALSE,
-  cluster_cols  = FALSE,
-  border_color  = "white",
-  angle_col     = 45,
-  cellwidth     = 60, cellheight = 45,
-  fontsize       = 12,
-  main           = "Mean Benthic Cover (%) by Site",
-  filename       = "figures/fig_heatmap_substrate.png",
+  color           = viridis::viridis(100, option = "D"),
+  cluster_rows    = FALSE,
+  cluster_cols    = FALSE,
+  border_color    = "white",
+  angle_col       = 45,
+  cellwidth       = 60, cellheight = 45,
+  fontsize        = 12,
+  display_numbers = TRUE,
+  number_format   = "%.1f%%",
+  number_color    = "white",
+  fontsize_number = 10,
+  main            = "Mean Benthic Cover (%) by Site",
+  filename        = "figures/fig_heatmap_substrate.png",
   width = 8, height = 5
 )
 
 pheatmap(
   heat_mat,
-  color         = viridis::viridis(100, option = "D"),
-  cluster_rows  = FALSE,
-  cluster_cols  = FALSE,
-  border_color  = "white",
-  angle_col     = 45,
-  cellwidth     = 60, cellheight = 45,
-  fontsize       = 12,
-  main           = "Mean Benthic Cover (%) by Site"
+  color           = viridis::viridis(100, option = "D"),
+  cluster_rows    = FALSE,
+  cluster_cols    = FALSE,
+  border_color    = "white",
+  angle_col       = 45,
+  cellwidth       = 60, cellheight = 45,
+  fontsize        = 12,
+  display_numbers = TRUE,
+  number_format   = "%.1f%%",
+  number_color    = "white",
+  fontsize_number = 10,
+  main            = "Mean Benthic Cover (%) by Site"
 )
 ```
 
@@ -857,17 +882,19 @@ ggsave("figures/fig_rugosity_boxplot.png", p_rug, width = 10, height = 6.5, dpi 
 ```{r coral-health-stats}
 #| label: coral-health-stats
 
-# Aggregate health categories per transect (sum across all coral types per dive)
+# Aggregate rows within each transect visit: the raw data has one row per coral type,
+# so we sum all condition counts to get a single value per transect per health category.
+# transect_id = date + site, which uniquely identifies each dive visit.
 health_by_transect <- coral_health_long |>
   group_by(transect_id, dive_site, date, year, month_year) |>
   summarise(
-    he   = sum(he,   na.rm = TRUE),
-    dg_m = sum(dg_m, na.rm = TRUE),
-    dg_h = sum(dg_h, na.rm = TRUE),
-    de   = sum(de,   na.rm = TRUE),
-    pa   = sum(pa,   na.rm = TRUE),
-    pb   = sum(pb,   na.rm = TRUE),
-    fb   = sum(fb,   na.rm = TRUE),
+    he   = sum(he,   na.rm = TRUE),  # healthy colonies
+    dg_m = sum(dg_m, na.rm = TRUE),  # mild degradation
+    dg_h = sum(dg_h, na.rm = TRUE),  # heavy degradation
+    de   = sum(de,   na.rm = TRUE),  # dead
+    pa   = sum(pa,   na.rm = TRUE),  # paling
+    pb   = sum(pb,   na.rm = TRUE),  # partial bleaching
+    fb   = sum(fb,   na.rm = TRUE),  # full bleaching
     .groups = "drop"
   ) |>
   filter(!is.na(dive_site))
@@ -947,66 +974,160 @@ ggsave("figures/fig_coral_health_proportions.png", p_health,
 ```{r temporal-bleaching}
 #| label: temporal-bleaching
 
+# ---- 1. Prepare transect-level bleaching data ----------------------------------
+# bleaching_any = sum of paling (PA) + partial bleaching (PB) + full bleaching (FB)
+# per transect. This is the primary response variable for temporal comparison.
 bleach_temporal <- health_by_transect |>
   mutate(
-    bleaching_any = pa + pb + fb,  # any bleaching/paling signal
-    date_month    = as.Date(format(date, "%Y-%m-01"))
+    bleaching_any = pa + pb + fb,
+    # Correct any year-coding artefacts (e.g. 2093 → 2023 from date parsing errors)
+    year = case_when(
+      year == 2093 ~ 2023L,
+      year == 2094 ~ 2024L,
+      year == 2095 ~ 2025L,
+      TRUE         ~ as.integer(year)
+    )
   ) |>
-  filter(!is.na(date_month))
+  filter(!is.na(year), year %in% c(2023L, 2024L, 2025L))
 
-cat("=== Bleaching/paling records by year ===\n")
+# ---- 2. Summary statistics per year -------------------------------------------
+# Reports mean ± SD and proportion of transects with any bleaching signal
+cat("=== Bleaching/paling summary by survey year ===\n")
 bleach_yr <- bleach_temporal |>
   group_by(year) |>
   summarise(
-    n_transects       = n(),
-    mean_any_bleach   = round(mean(bleaching_any, na.rm = TRUE), 3),
-    sd_any_bleach     = round(sd(bleaching_any,   na.rm = TRUE), 3),
-    prop_transects_w_bleaching = mean(bleaching_any > 0, na.rm = TRUE),
+    n_transects             = n(),
+    mean_bleach             = round(mean(bleaching_any, na.rm = TRUE), 2),
+    sd_bleach               = round(sd(bleaching_any,   na.rm = TRUE), 2),
+    se_bleach               = round(sd_bleach / sqrt(n_transects), 3),
+    median_bleach           = round(median(bleaching_any, na.rm = TRUE), 2),
+    prop_w_bleaching        = round(mean(bleaching_any > 0, na.rm = TRUE), 3),
     .groups = "drop"
   )
 print(bleach_yr)
 
-# Kruskal–Wallis: bleaching score across years
-if (n_distinct(bleach_temporal$year) >= 2) {
-  kw_bleach_year <- bleach_temporal |>
-    filter(!is.na(year)) |>
-    mutate(year = factor(year)) |>
-    kruskal_test(bleaching_any ~ year)
-  cat("\nKruskal–Wallis bleaching_any ~ year:\n"); print(kw_bleach_year)
-}
+# ---- 3. Summary statistics per year × site ------------------------------------
+# Useful for spotting whether any site drove the temporal signal
+cat("\n=== Bleaching/paling summary by year × site ===\n")
+bleach_yr_site <- bleach_temporal |>
+  group_by(year, dive_site) |>
+  summarise(
+    n           = n(),
+    mean_bleach = round(mean(bleaching_any, na.rm = TRUE), 2),
+    sd_bleach   = round(sd(bleaching_any,   na.rm = TRUE), 2),
+    .groups     = "drop"
+  )
+print(bleach_yr_site)
 
-# Monthly time series plot
-bleach_monthly <- bleach_temporal |>
-  group_by(date_month, dive_site) |>
-  summarise(mean_bleach = mean(bleaching_any, na.rm = TRUE),
-            n = n(), .groups = "drop")
+# ---- 4. Kruskal–Wallis: does bleaching differ across years? -------------------
+# Non-parametric — bleaching counts are skewed, sample sizes unequal between years
+kw_bleach_year <- bleach_temporal |>
+  mutate(year = factor(year)) |>
+  kruskal_test(bleaching_any ~ year)
+cat("\n=== Kruskal–Wallis: bleaching_any ~ year ===\n")
+print(kw_bleach_year)
 
-p_bleach_time <- ggplot(bleach_monthly,
-                        aes(x = date_month, y = mean_bleach,
+# Effect size: epsilon-squared (analogous to eta² for KW; ranges 0–1)
+# Formula: ε² = (H - k + 1) / (n - k), where k = number of groups
+n_total <- nrow(bleach_temporal)
+k_groups <- n_distinct(bleach_temporal$year)
+eps_sq <- (kw_bleach_year$statistic - k_groups + 1) / (n_total - k_groups)
+cat(sprintf("Effect size (epsilon-squared): %.3f\n", eps_sq))
+cat("Interpretation: 0.01 small | 0.06 medium | 0.14 large\n")
+
+# ---- 5. Dunn post-hoc: which year pairs differ? -------------------------------
+# Bonferroni correction used (conservative; 3 comparisons only)
+cat("\n=== Dunn post-hoc (Bonferroni): pairwise year comparisons ===\n")
+dunn_bleach_year <- bleach_temporal |>
+  mutate(year = factor(year)) |>
+  dunn_test(bleaching_any ~ year, p.adjust.method = "bonferroni") |>
+  add_significance()
+print(dunn_bleach_year)
+
+# ---- 6. Site × year interaction check (KW on each site separately) -------------
+# Tests whether the temporal signal is consistent across sites or site-specific
+cat("\n=== Per-site KW: bleaching_any ~ year (within each site) ===\n")
+
+site_year_kw <- bleach_temporal |>
+  filter(!is.na(dive_site)) |>
+  group_by(dive_site) |>
+  filter(n_distinct(year) >= 2) |>
+  group_modify(~ {
+    tryCatch(
+      kruskal_test(.x, bleaching_any ~ factor(year)), 
+      # Remove the mutate(dive_site = ...) here
+      error = function(e) tibble(statistic = NA, df = NA, p = NA) # Remove dive_site here too
+    )
+  }) |>
+  ungroup() |>
+  select(dive_site, statistic, df, p)
+print(site_year_kw)
+# ---- 7. Figure: temporal trend by year and site --------------------------------
+survey_start <- min(bleach_temporal$date, na.rm = TRUE)
+survey_end   <- max(bleach_temporal$date, na.rm = TRUE)
+
+bleach_yearly <- bleach_temporal |>
+  group_by(year, dive_site) |>
+  summarise(
+    mean_bleach = mean(bleaching_any, na.rm = TRUE),
+    se_bleach   = sd(bleaching_any, na.rm = TRUE) / sqrt(n()),
+    .groups     = "drop"
+  ) |>
+  # Convert to factor here
+  mutate(year = factor(year, levels = c("2023", "2024", "2025")))
+
+p_bleach_time <- ggplot(bleach_yearly,
+                        aes(x = year, y = mean_bleach,
                             colour = dive_site, group = dive_site)) +
+  # Use discrete positions for the rectangle: 2023 is 1, 2024 is 2.
+  annotate("rect", xmin = 0.6, xmax = 2.4, 
+           ymin = -Inf, ymax = Inf, alpha = 0.08, fill = "firebrick") +
+  annotate("text", x = 1.5,
+           y = max(bleach_yearly$mean_bleach, na.rm = TRUE) * 0.95,
+           label = "4th Global Bleaching Event (2023–2024)",
+           size = 3.0, colour = "firebrick", fontface = "italic") +
+  geom_errorbar(aes(ymin = mean_bleach - se_bleach,
+                    ymax = mean_bleach + se_bleach),
+                width = 0.18, linewidth = 0.7, alpha = 0.8) +
   geom_line(linewidth = 1.1, alpha = 0.85) +
-  geom_point(size = 2.5) +
+  geom_point(size = 3.5) +
   scale_colour_viridis_d(option = "D", end = 0.92, name = "Site") +
-  # Mark bleaching event window
-  annotate("rect",
-           xmin = as.Date("2023-09-01"), xmax = as.Date("2024-06-30"),
-           ymin = -Inf, ymax = Inf,
-           alpha = 0.12, fill = "firebrick") +
-  annotate("text",
-           x = as.Date("2024-01-01"), y = Inf, vjust = 1.5,
-           label = "4th Global Bleaching Event\n(2023–2024)", size = 3.5,
-           colour = "firebrick") +
+  # Explicitly use scale_x_discrete to prevent continuous scale errors
+  scale_x_discrete() + 
+  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.12))) +
   labs(
     title    = "Temporal Trend in Bleaching/Paling Observations",
-    subtitle = "Mean combined bleaching score per transect per month and site",
-    x = "Month", y = "Mean bleaching/paling count per transect"
+    subtitle = sprintf(
+      "Mean ± SE bleaching score | KW: χ²(%d) = %.2f, p = %.3f | Survey: %s – %s",
+      kw_bleach_year$df, kw_bleach_year$statistic, kw_bleach_year$p,
+      format(survey_start, "%b %Y"), format(survey_end, "%b %Y")
+    ),
+    x = "Survey year", y = "Mean bleaching count per transect"
   ) +
-  scale_x_date(date_breaks = "3 months", date_labels = "%b %Y") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme_minimal()
 
 print(p_bleach_time)
-ggsave("figures/fig_bleaching_temporal.png", p_bleach_time,
-       width = 12, height = 6.5, dpi = 300)
+
+# ---- 8. Supplementary: raw transect points per year (violin + jitter) ----------
+# Gives reviewer a view of the full distribution, not just the mean
+p_bleach_violin <- ggplot(
+  bleach_temporal |> mutate(year = factor(year)),
+  aes(x = year, y = bleaching_any, fill = year)
+) +
+  geom_violin(alpha = 0.55, trim = TRUE, colour = "grey40") +
+  geom_jitter(width = 0.15, alpha = 0.3, size = 1.2, colour = "grey30") +
+  stat_summary(fun = mean, geom = "point", shape = 23,
+               size = 4, fill = "white", colour = "black") +
+  scale_fill_viridis_d(option = "D", end = 0.85, guide = "none") +
+  labs(
+    title    = "Distribution of Bleaching/Paling Scores by Year",
+    subtitle = "All transects shown; diamond = mean",
+    x = "Survey year", y = "Bleaching/paling count per transect"
+  )
+
+print(p_bleach_violin)
+ggsave("figures/fig_bleaching_violin.png", p_bleach_violin,
+       width = 9, height = 6, dpi = 300)
 ```
 
 ---
@@ -1026,7 +1147,7 @@ tribble(
   "Chi-squared",                "Coral morphotype counts",       "5 sites",    sprintf("χ²=%.2f, df=%d", chi_morph$statistic, chi_morph$parameter), sprintf("%.4f", chi_morph$p.value),
   "PERMANOVA (Bray-Curtis)",    "Coral morphotype composition",  "5 sites",    sprintf("F=%.2f, R²=%.3f", perm_morph$F[1], perm_morph$R2[1]),      sprintf("%.4f", perm_morph$`Pr(>F)`[1]),
   "Kruskal–Wallis",             "Rugosity (max. relief)",        "5 sites",    sprintf("χ²=%.2f, df=%d", kw_rug$statistic, kw_rug$df),             sprintf("%.4f", kw_rug$p),
-  "Kruskal–Wallis (if sig.)",   "Bleaching/paling ~ year",       "3 years",    "See output above",             "See above"
+  "Kruskal–Wallis",             "Bleaching/paling ~ year",       "3 years",    sprintf("χ²=%.2f, df=%d", kw_bleach_year$statistic, kw_bleach_year$df), sprintf("%.4f", kw_bleach_year$p)
 ) |>
   kbl(caption = "Summary of statistical tests run to address reviewer comments.") |>
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = TRUE)
@@ -1050,3 +1171,4 @@ cat(paste(" •", figs), sep = "\n")
 ```{r session-info}
 sessionInfo()
 ```
+
