@@ -19,6 +19,7 @@ execute:
 ---
 
 ```{r setup}
+
 #| label: setup
 #| include: false
 
@@ -26,20 +27,27 @@ execute:
 # Install any missing packages before loading
 pkgs <- c(
   "tidyverse", "readxl", "janitor",      # core wrangling
-  "ggplot2", "viridis", "ggpubr",         # plotting
-  "rstatix", "multcompView",              # stats + letters
-  "vegan",                                # PERMANOVA / community ecology
-  "scatterpie",                           # pie-chart map
-  "sf", "rnaturalearth",                  # map layers (medium scale, no rnaturalearthhires needed)
-  "ggspatial",                            # scale bar & north arrow
-  "pheatmap",                             # heatmaps
-  "corrplot",                             # correlation plots
-  "knitr", "kableExtra"                   # nice tables
+  "ggplot2", "viridis", "ggpubr",        # plotting
+  "rstatix", "multcompView",             # stats + letters
+  "vegan",                               # PERMANOVA / community ecology
+  "scatterpie",                          # pie-chart map
+  "sf", "rnaturalearth",                 # map layers
+  "ggspatial",                           # scale bar & north arrow
+  "prettymapr",                          # required by ggspatial tiles
+  "raster",                              # spatial backend (sometimes required)
+  "pheatmap",                            # heatmaps
+  "corrplot",                            # correlation plots
+  "knitr", "kableExtra"                  # nice tables
 )
+
+
 for (p in pkgs) {
-  if (!requireNamespace(p, quietly = TRUE)) install.packages(p)
+  if (!requireNamespace(p, quietly = TRUE)) {
+    install.packages(p)
+  }
 }
-lapply(pkgs, library, character.only = TRUE)
+
+invisible(lapply(pkgs, library, character.only = TRUE))
 
 # ---- Global figure theme (colourblind-safe, all figures match) ----
 theme_reef <- function(base_size = 14) {
@@ -61,6 +69,8 @@ dir.create("figures", showWarnings = FALSE)
 site_levels <- c("Casablanca", "Buoy Line", "Manuels Wall", "Grandmas Garden", "Pandora")
 # viridis(5) gives 5 colourblind-safe colours
 site_palette <- setNames(viridis::viridis(5, option = "D", end = 0.92), site_levels)
+
+
 ```
 
 ---
@@ -221,9 +231,10 @@ cat(sprintf("Mean ± SD: %.2f%% ± %.2f; range: %.1f–%.1f%%\n",
             overall_stats$algae_min,  overall_stats$algae_max))
 
 # Site-level table (R1.11: add sites as a column)
+
 site_stats <- substrate_clean |>
-  group_by(dive_site) |>
-  summarise(
+  dplyr::group_by(dive_site) |>
+  dplyr::summarise(
     n          = n(),
     coral_mean = round(mean(coral_pct, na.rm = TRUE), 2),
     coral_sd   = round(sd(coral_pct,   na.rm = TRUE), 2),
@@ -233,16 +244,18 @@ site_stats <- substrate_clean |>
     sponge_sd  = round(sd(sponge_pct,  na.rm = TRUE), 2),
     .groups    = "drop"
   ) |>
-  mutate(
+  dplyr::mutate(
     `Coral (mean ± SD)`  = paste0(coral_mean,  " ± ", coral_sd),
     `Algae (mean ± SD)`  = paste0(algae_mean,  " ± ", algae_sd),
     `Sponge (mean ± SD)` = paste0(sponge_mean, " ± ", sponge_sd)
   ) |>
-  select(dive_site, n, `Coral (mean ± SD)`, `Algae (mean ± SD)`, `Sponge (mean ± SD)`)
+  dplyr::select(dive_site, n, `Coral (mean ± SD)`, `Algae (mean ± SD)`, `Sponge (mean ± SD)`)
+
 
 site_stats |>
   kbl(caption = "Table 1. Mean ± SD percent cover by site (R1.11: sites as rows)") |>
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+
 ```
 
 ---
@@ -399,20 +412,11 @@ p_coral <- ggplot(substrate_clean,
               width = 0.18, size = 1.6, alpha = 0.75) +
   stat_summary(fun = mean, geom = "point", shape = 23,
                size = 3.5, fill = "white", colour = "black") +
-  # Significance brackets for pairs with p.adj < 0.05 (from Dunn test above)
-  stat_pvalue_manual(
-    dunn_coral |>
-      filter(p.adj < 0.05) |>
-      add_xy_position(x = "dive_site", fun = "max", dodge = 0.8),
-    label = "p.adj.signif", tip.length = 0.01,
-    hide.ns = TRUE, size = 3.5
-  ) +
   scale_fill_viridis_d(option = "D", end = 0.92, guide = "none") +
   scale_colour_manual(values = year_cols, name = "Survey year") +
-  scale_y_continuous(expand = expansion(mult = c(0.02, 0.15))) +
   labs(
     title    = "Coral Cover (%) by Site",
-    subtitle = sprintf("Kruskal–Wallis: χ²(%d) = %.2f, p = %.4f; pairwise brackets = Dunn BH, p < 0.05",
+    subtitle = sprintf("Kruskal–Wallis: χ²(%d) = %.2f, p = %.4f  (pairwise Dunn BH results in table above)",
                        kw_coral$df, kw_coral$statistic, kw_coral$p),
     x = NULL, y = "Coral Cover (%)"
   )
@@ -435,19 +439,11 @@ p_algae <- ggplot(substrate_clean,
               width = 0.18, size = 1.6, alpha = 0.75) +
   stat_summary(fun = mean, geom = "point", shape = 23,
                size = 3.5, fill = "white", colour = "black") +
-  stat_pvalue_manual(
-    dunn_algae |>
-      filter(p.adj < 0.05) |>
-      add_xy_position(x = "dive_site", fun = "max", dodge = 0.8),
-    label = "p.adj.signif", tip.length = 0.01,
-    hide.ns = TRUE, size = 3.5
-  ) +
   scale_fill_viridis_d(option = "D", end = 0.92, guide = "none") +
   scale_colour_manual(values = year_cols, name = "Survey year") +
-  scale_y_continuous(expand = expansion(mult = c(0.02, 0.15))) +
   labs(
     title    = "Macroalgae Cover (%) by Site",
-    subtitle = sprintf("Kruskal–Wallis: χ²(%d) = %.2f, p = %.4f; pairwise brackets = Dunn BH, p < 0.05",
+    subtitle = sprintf("Kruskal–Wallis: χ²(%d) = %.2f, p = %.4f  (pairwise Dunn BH results in table above)",
                        kw_algae$df, kw_algae$statistic, kw_algae$p),
     x = NULL, y = "Macroalgae Cover (%)"
   )
@@ -624,16 +620,18 @@ site_coords <- tibble(
 map_data <- left_join(coral_props_site, site_coords, by = "dive_site") |>
   mutate(r = coral_total / max(coral_total, na.rm = TRUE) * 0.0008 + 0.0003)
 
-# Base map — ne_countries medium scale (no extra packages needed)
-panama <- ne_countries(country = "Panama", scale = "medium", returnclass = "sf")
+# Base map — OSM tiles via ggspatial (no extra packages; uses cached tiles)
+# ne_countries medium scale doesn't resolve the small Bocas del Toro islands,
+# so we use OpenStreetMap tiles for the local basemap instead.
 
 morph_palette <- setNames(viridis::viridis(7, option = "C", end = 0.95), prop_cols)
 morph_labels  <- setNames(coral_morph_names, prop_cols)
 
-# ---- Main map: pie charts on local basemap ----
+# ---- Main map: OSM tile background + pie charts ----
 p_map_main <- ggplot() +
-  geom_sf(data = panama, fill = "grey88", colour = "grey60") +
-  coord_sf(xlim = c(-82.228, -82.216), ylim = c(9.318, 9.336), expand = FALSE) +
+  annotation_map_tile(type = "osm", zoom = 15, quiet = TRUE) +
+  coord_sf(xlim = c(-82.228, -82.216), ylim = c(9.318, 9.336),
+           crs = sf::st_crs(4326), expand = FALSE) +
   geom_scatterpie(
     aes(x = longitude, y = latitude, group = dive_site, r = r),
     data  = map_data,
@@ -642,10 +640,11 @@ p_map_main <- ggplot() +
   ) +
   scale_fill_manual(values = morph_palette, labels = morph_labels,
                     name = "Coral morphotype") +
-  geom_text(data = map_data,
-            aes(x = longitude, y = latitude, label = dive_site),
-            hjust = -0.12, vjust = 0.4, size = 3.2, fontface = "bold",
-            inherit.aes = FALSE) +
+  geom_label(data = map_data,
+             aes(x = longitude, y = latitude, label = dive_site),
+             hjust = -0.08, vjust = 0.5, size = 3.0, fontface = "bold",
+             label.size = 0, fill = alpha("white", 0.6),
+             inherit.aes = FALSE) +
   annotation_scale(location = "bl", width_hint = 0.3) +
   annotation_north_arrow(location = "tr", which_north = "true",
                          style = north_arrow_minimal()) +
@@ -654,31 +653,27 @@ p_map_main <- ggplot() +
   theme(legend.position = "right",
         plot.caption = element_text(size = 7, colour = "grey50"))
 
-# ---- Inset context map: where is Bocas del Toro in Panama? ----
+# ---- Inset context map (Panama overview, no tiles needed) ----
+panama_ctx <- ne_countries(country = "Panama", scale = "medium", returnclass = "sf")
 p_inset <- ggplot() +
-  geom_sf(data = panama, fill = "grey80", colour = "grey50", linewidth = 0.3) +
+  geom_sf(data = panama_ctx, fill = "grey80", colour = "grey50", linewidth = 0.3) +
   annotate("point", x = -82.222, y = 9.327,
            colour = "firebrick", size = 3, shape = 17) +
-  annotate("text", x = -82.222, y = 9.327,
-           label = "Study area", hjust = -0.15, vjust = 1.4,
-           size = 2.8, colour = "firebrick") +
   coord_sf(xlim = c(-83.2, -77.2), ylim = c(7.2, 11.2), expand = FALSE) +
   theme_void(base_size = 9) +
   theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8))
 
-# ---- Combine with inset using ggpubr / cowplot-style patchwork ----
-# We use annotation_custom to embed the inset in the main map
 p_map <- p_map_main +
   annotation_custom(
-    grob   = ggplotGrob(p_inset),
-    xmin   = -82.2175, xmax = -82.216,
-    ymin   = 9.331,    ymax = 9.336
+    grob  = ggplotGrob(p_inset),
+    xmin  = -82.2175, xmax = -82.216,
+    ymin  = 9.331,    ymax  = 9.336
   ) +
   labs(
     title    = "Coral Growth-Form Composition at Isla Solarte Reef Sites",
     subtitle = "Pie area ∝ mean coral cover; colours = morphotype proportion",
     caption  = paste0(
-      "Map: Natural Earth (rnaturalearth v", packageVersion("rnaturalearth"), "). ",
+      "Basemap © OpenStreetMap contributors. ",
       "Produced with R/ggplot2 v", packageVersion("ggplot2"),
       ", sf v", packageVersion("sf"),
       ", ggspatial v", packageVersion("ggspatial"), "."
@@ -708,28 +703,36 @@ colnames(heat_mat) <- c("Hard coral", "Macroalgae", "Sponge",
 
 pheatmap(
   heat_mat,
-  color         = viridis::viridis(100, option = "D"),
-  cluster_rows  = FALSE,
-  cluster_cols  = FALSE,
-  border_color  = "white",
-  angle_col     = 45,
-  cellwidth     = 60, cellheight = 45,
-  fontsize       = 12,
-  main           = "Mean Benthic Cover (%) by Site",
-  filename       = "figures/fig_heatmap_substrate.png",
+  color           = viridis::viridis(100, option = "D"),
+  cluster_rows    = FALSE,
+  cluster_cols    = FALSE,
+  border_color    = "white",
+  angle_col       = 45,
+  cellwidth       = 60, cellheight = 45,
+  fontsize        = 12,
+  display_numbers = TRUE,
+  number_format   = "%.1f%%",
+  number_color    = "white",
+  fontsize_number = 10,
+  main            = "Mean Benthic Cover (%) by Site",
+  filename        = "figures/fig_heatmap_substrate.png",
   width = 8, height = 5
 )
 
 pheatmap(
   heat_mat,
-  color         = viridis::viridis(100, option = "D"),
-  cluster_rows  = FALSE,
-  cluster_cols  = FALSE,
-  border_color  = "white",
-  angle_col     = 45,
-  cellwidth     = 60, cellheight = 45,
-  fontsize       = 12,
-  main           = "Mean Benthic Cover (%) by Site"
+  color           = viridis::viridis(100, option = "D"),
+  cluster_rows    = FALSE,
+  cluster_cols    = FALSE,
+  border_color    = "white",
+  angle_col       = 45,
+  cellwidth       = 60, cellheight = 45,
+  fontsize        = 12,
+  display_numbers = TRUE,
+  number_format   = "%.1f%%",
+  number_color    = "white",
+  fontsize_number = 10,
+  main            = "Mean Benthic Cover (%) by Site"
 )
 ```
 
@@ -957,96 +960,50 @@ ggsave("figures/fig_coral_health_proportions.png", p_health,
 ```{r temporal-bleaching}
 #| label: temporal-bleaching
 
+# --- Data preparation ---
 bleach_temporal <- health_by_transect |>
   mutate(
-    bleaching_any = pa + pb + fb,  # any bleaching/paling signal
-    date_month    = as.Date(format(date, "%Y-%m-01"))
+    bleaching_any = pa + pb + fb,
+    year = case_when(
+      year == 2093 ~ 2023,
+      year == 2094 ~ 2024,
+      year == 2095 ~ 2025,
+      TRUE ~ year
+    )
   ) |>
-  filter(!is.na(date_month))
+  filter(!is.na(year), year != 1970)
 
+# --- Summary statistics ---
 cat("=== Bleaching/paling records by year ===\n")
+
 bleach_yr <- bleach_temporal |>
   group_by(year) |>
   summarise(
-    n_transects       = n(),
-    mean_any_bleach   = round(mean(bleaching_any, na.rm = TRUE), 3),
-    sd_any_bleach     = round(sd(bleaching_any,   na.rm = TRUE), 3),
+    n_transects = n(),
+    mean_bleach = mean(bleaching_any, na.rm = TRUE),
+    sd_bleach   = sd(bleaching_any, na.rm = TRUE),
+    se_bleach   = sd_bleach / sqrt(n_transects),
     prop_transects_w_bleaching = mean(bleaching_any > 0, na.rm = TRUE),
     .groups = "drop"
   )
+
 print(bleach_yr)
 
-# Kruskal–Wallis: bleaching score across years
+# --- Kruskal–Wallis test ---
 if (n_distinct(bleach_temporal$year) >= 2) {
+
   kw_bleach_year <- bleach_temporal |>
-    filter(!is.na(year)) |>
     mutate(year = factor(year)) |>
     kruskal_test(bleaching_any ~ year)
-  cat("\nKruskal–Wallis bleaching_any ~ year:\n"); print(kw_bleach_year)
+
+  cat("\nKruskal–Wallis test (bleaching_any ~ year):\n")
+  print(kw_bleach_year)
 }
 
-# Monthly time series plot — fix x-axis to span the actual data range
-bleach_monthly <- bleach_temporal |>
-  group_by(date_month, dive_site) |>
-  summarise(mean_bleach = mean(bleaching_any, na.rm = TRUE),
-            n = n(), .groups = "drop")
+bleach_temporal |>
+  mutate(year = factor(year)) |>
+  dunn_test(bleaching_any ~ year, p.adjust.method = "bonferroni")
 
-# Determine actual survey date range
-survey_start <- min(bleach_monthly$date_month)
-survey_end   <- max(bleach_monthly$date_month)
-
-# --- Primary plot: mean bleaching per site per YEAR (avoids the bunching problem) ---
-# The data has very few time points so a categorical year axis is cleaner and
-# more interpretable than a continuous date axis with a large gap.
-bleach_yearly <- bleach_temporal |>
-  group_by(year, dive_site) |>
-  summarise(
-    mean_bleach = mean(bleaching_any, na.rm = TRUE),
-    se_bleach   = sd(bleaching_any, na.rm = TRUE) / sqrt(n()),
-    n           = n(),
-    .groups     = "drop"
-  ) |>
-  mutate(year = factor(year))
-
-p_bleach_time <- ggplot(bleach_yearly,
-                        aes(x = year, y = mean_bleach,
-                            colour = dive_site, group = dive_site)) +
-  # Shading for the 4th global bleaching event — only if 2024 is in the data
-  {
-    yrs <- levels(bleach_yearly$year)
-    if ("2023" %in% yrs | "2024" %in% yrs) {
-      list(
-        annotate("rect",
-                 xmin = which(yrs == "2023") - 0.5,
-                 xmax = which(yrs %in% c("2023","2024")) |> max() + 0.5,
-                 ymin = -Inf, ymax = Inf,
-                 alpha = 0.10, fill = "firebrick"),
-        annotate("text",
-                 x     = mean(which(yrs %in% c("2023","2024"))),
-                 y     = max(bleach_yearly$mean_bleach, na.rm = TRUE) * 0.95,
-                 label = "4th Global\nBleaching Event\n(2023–2024)",
-                 size  = 3.0, colour = "firebrick", fontface = "italic")
-      )
-    }
-  } +
-  geom_errorbar(aes(ymin = mean_bleach - se_bleach,
-                    ymax = mean_bleach + se_bleach),
-                width = 0.18, linewidth = 0.7, alpha = 0.8) +
-  geom_line(linewidth = 1.1, alpha = 0.85) +
-  geom_point(size = 3.5) +
-  scale_colour_viridis_d(option = "D", end = 0.92, name = "Site") +
-  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.12))) +
-  labs(
-    title    = "Temporal Trend in Bleaching/Paling Observations",
-    subtitle = sprintf("Mean (± SE) combined bleaching score per transect. Survey period: %s – %s",
-                       format(survey_start, "%b %Y"), format(survey_end, "%b %Y")),
-    x = "Survey year", y = "Mean bleaching/paling count per transect"
-  ) +
-  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
-
-print(p_bleach_time)
-ggsave("figures/fig_bleaching_temporal.png", p_bleach_time,
-       width = 12, height = 6.5, dpi = 300)
 ```
 
 ---
@@ -1070,6 +1027,9 @@ tribble(
 ) |>
   kbl(caption = "Summary of statistical tests run to address reviewer comments.") |>
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = TRUE)
+
+
+
 ```
 
 ---
@@ -1077,10 +1037,12 @@ tribble(
 ## 12  Saved Figures Index
 
 ```{r figures-index}
+
 #| label: figures-index
 figs <- list.files("figures", pattern = "\\.png$", full.names = FALSE)
 cat("All figures saved to ./figures/:\n")
 cat(paste(" •", figs), sep = "\n")
+
 ```
 
 ---
@@ -1089,4 +1051,6 @@ cat(paste(" •", figs), sep = "\n")
 
 ```{r session-info}
 sessionInfo()
+
 ```
+

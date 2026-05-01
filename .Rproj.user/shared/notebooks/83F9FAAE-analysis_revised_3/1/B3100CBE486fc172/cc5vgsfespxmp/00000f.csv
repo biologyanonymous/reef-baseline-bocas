@@ -1,0 +1,11 @@
+"0","#| label: permanova"
+"0",""
+"0","set.seed(42)"
+"0",""
+"0","# Community matrix: 5 corrected broad categories (proportions)"
+"0","comm_matrix <- substrate_clean |>"
+"0","  select(coral_prop, algae_prop, sponge_prop, abiotic_prop, other_benthic_prop) |>"
+"0","  as.matrix()"
+"2","Error in h(simpleError(msg, call)) : 
+  error in evaluating the argument 'x' in selecting a method for function 'as.matrix': unable to find an inherited method for function ‘select’ for signature ‘x = ""tbl_df""’
+"

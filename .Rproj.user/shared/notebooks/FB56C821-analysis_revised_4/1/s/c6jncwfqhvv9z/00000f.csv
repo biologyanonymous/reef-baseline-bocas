@@ -1,0 +1,49 @@
+"0","#| label: kw-coral"
+"0",""
+"0","# Non-parametric (proportion data, likely non-normal) → Kruskal-Wallis"
+"0","kw_coral <- substrate_clean |> kruskal_test(coral_pct ~ dive_site)"
+"0","print(kw_coral)"
+"1","[38;5;246m# A tibble: 1 × 6[39m
+"
+"1","  .y.           n statistic    df        p method        
+"
+"1","[38;5;250m*[39m [3m[38;5;246m<chr>[39m[23m     [3m[38;5;246m<int>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<chr>[39m[23m         
+"
+"1","[38;5;250m1[39m coral_pct   275      56.3     4 1.75[38;5;246me[39m[31m-11[39m Kruskal-Wallis
+"
+"0","dunn_coral <- substrate_clean |>"
+"0","  dunn_test(coral_pct ~ dive_site, p.adjust.method = ""BH"") |>"
+"0","  add_significance()"
+"0","print(dunn_coral)"
+"1","[38;5;246m# A tibble: 10 × 9[39m
+"
+"1","   .y.       group1          group2             n1    n2 statistic        p         p.adj p.adj.signif
+"
+"1","   [3m[38;5;246m<chr>[39m[23m     [3m[38;5;246m<chr>[39m[23m           [3m[38;5;246m<chr>[39m[23m           [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<int>[39m[23m     [3m[38;5;246m<dbl>[39m[23m    [3m[38;5;246m<dbl>[39m[23m         [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<chr>[39m[23m       
+"
+"1","[38;5;250m 1[39m coral_pct Casablanca      Buoy Line          93    45    -[31m3[39m[31m.[39m[31m20[39m  1.39[38;5;246me[39m[31m- 3[39m 0.002[4m3[24m[4m2[24m       **          
+"
+"1","[38;5;250m 2[39m coral_pct Casablanca      Manuels Wall       93    35    -[31m2[39m[31m.[39m[31m35[39m  1.87[38;5;246me[39m[31m- 2[39m 0.026[4m7[24m        *           
+"
+"1","[38;5;250m 3[39m coral_pct Casablanca      Grandmas Garden    93    55     4.19  2.76[38;5;246me[39m[31m- 5[39m 0.000[4m0[24m[4m6[24m[4m9[24m1     ****        
+"
+"1","[38;5;250m 4[39m coral_pct Casablanca      Pandora            93    47     2.04  4.15[38;5;246me[39m[31m- 2[39m 0.051[4m8[24m        ns          
+"
+"1","[38;5;250m 5[39m coral_pct Buoy Line       Manuels Wall       45    35     0.506 6.13[38;5;246me[39m[31m- 1[39m 0.613         ns          
+"
+"1","[38;5;250m 6[39m coral_pct Buoy Line       Grandmas Garden    45    55     6.43  1.24[38;5;246me[39m[31m-10[39m 0.000[4m0[24m[4m0[24m[4m0[24m001[4m2[24m[4m4[24m ****        
+"
+"1","[38;5;250m 7[39m coral_pct Buoy Line       Pandora            45    47     4.53  5.85[38;5;246me[39m[31m- 6[39m 0.000[4m0[24m[4m1[24m[4m9[24m5     ****        
+"
+"1","[38;5;250m 8[39m coral_pct Manuels Wall    Grandmas Garden    35    55     5.45  4.91[38;5;246me[39m[31m- 8[39m 0.000[4m0[24m[4m0[24m[4m0[24m246   ****        
+"
+"1","[38;5;250m 9[39m coral_pct Manuels Wall    Pandora            35    47     3.72  1.97[38;5;246me[39m[31m- 4[39m 0.000[4m3[24m[4m9[24m[4m4[24m      ***         
+"
+"1","[38;5;250m10[39m coral_pct Grandmas Garden Pandora            55    47    -[31m1[39m[31m.[39m[31m75[39m  7.96[38;5;246me[39m[31m- 2[39m 0.088[4m4[24m        ns          
+"
+"0","# Significance labels: only mark pairs that ARE significantly different (p.adj < 0.05)"
+"0","# CLD compact letters are not used because overlapping significance groups"
+"0","# produce multi-letter codes (e.g. ""ac"") that are ambiguous on a figure."
+"0","# Full pairwise results are printed in the table above."
+"0","# For the boxplot we annotate only the y-position max (used to set plot ceiling)."
+"0","coral_ymax <- max(substrate_clean$coral_pct, na.rm = TRUE) * 1.12"

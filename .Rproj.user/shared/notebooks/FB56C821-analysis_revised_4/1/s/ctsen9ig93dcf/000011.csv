@@ -1,0 +1,2 @@
+"0","ggsave(""figures/fig_coral_health_proportions.png"", p_health,"
+"0","       width = 10, height = 6.5, dpi = 300)"
