@@ -1,0 +1,3 @@
+"0","corrplot(spearman_mat, method = ""color"", col = viridis(200, option = ""D""),"
+"0","         addCoef.col = ""white"", number.cex = 0.8, tl.col = ""black"","
+"0","         title = ""Spearman correlations"", mar = c(0, 0, 1.5, 0))"

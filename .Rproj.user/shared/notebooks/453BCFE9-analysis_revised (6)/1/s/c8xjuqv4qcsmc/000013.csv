@@ -1,0 +1,35 @@
+"0","# ---- Substrate: read the already-cleaned CSV from data/ ----
+# substrate_cleaned.csv was produced by the original analysis.R cleaning pipeline.
+# It already has abiotic_prop, algae_prop, sponge_prop, coral_prop, other_prop
+# and all individual substrate columns. We just add pct columns + time fields.
+substrate_clean <- read_csv(""data/substrate_cleaned.csv"", show_col_types = FALSE) |>
+  mutate(
+    date       = lubridate::as_date(lubridate::parse_date_time(date,
+                   orders = c(""ymd"", ""dmy"", ""mdy"", ""ymd HMS"", ""dmy HMS""))),
+    # Fix 3: str_trim before any site matching
+    dive_site  = str_trim(dive_site),
+    # Recompute proportions with corrected groupings from raw columns.
+    # abiotic = si + sa + rb + rk (hard substrate only)
+    # other_benthic = oc + bc + fc + an + cm + tu + bcm + unknown
+    abiotic_pts       = rowSums(across(any_of(abiotic_cols)),       na.rm = TRUE),
+    other_benthic_pts = rowSums(across(any_of(other_benthic_cols)), na.rm = TRUE) +
+                        coalesce(unknown, 0L),
+    coral_pct         = coral_prop * 100,
+    algae_pct         = algae_prop * 100,
+    sponge_pct        = sponge_prop * 100,
+    abiotic_pct       = (abiotic_pts / total_data_points) * 100,
+    other_benthic_pct = (other_benthic_pts / total_data_points) * 100,
+    # recompute props to match (used in PERMANOVA community matrix)
+    abiotic_prop       = abiotic_pct / 100,
+    other_benthic_prop = other_benthic_pct / 100,
+    mean_depth = (depth_start + depth_end) / 2,
+    year       = as.integer(lubridate::year(date)),
+    month_year = format(date, ""%b %Y""),
+    dive_site  = factor(dive_site, levels = site_levels)
+  ) |>
+  filter(!is.na(dive_site))
+"
+"1","[1m[33mError[39m:[22m
+[38;5;255m[33m![38;5;255m ]8;;file:///Users/mert4755/Downloads/data/substrate_cleaned.csv[34mdata/substrate_cleaned.csv[38;5;255m]8;; does not exist in current working directory: ]8;;file:///Users/mert4755/Downloads[34m/Users/mert4755/Downloads[38;5;255m]8;;.[39m
+[90mRun `]8;;x-r-run:rlang::last_trace()rlang::last_trace()]8;;` to see where the error occurred.[39m
+"
